@@ -1,8 +1,7 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { LinearGradient as ExpoLinearGradient } from "expo-linear-gradient";
 import Svg, { Circle, Defs, Path, Pattern, Rect } from "react-native-svg";
 
@@ -17,48 +16,134 @@ import { useDeviceRegistration } from "@/context/DeviceRegistrationContext";
 
 type VerifyState = "idle" | "loading" | "valid" | "invalid" | "stolen";
 
+function DualImeiToggle({
+  enabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Pressable onPress={onToggle} style={di.toggle}>
+      <View style={[di.checkbox, enabled && di.checkboxActive]}>
+        {enabled && (
+          <Svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <Path
+              d="M2.5 6L5 8.5L9.5 3.5"
+              stroke="white"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+        )}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={di.title}>This device has 2 IMEI numbers</Text>
+        <Text style={di.sub}>
+          Dual-SIM phones have a second IMEI for the other SIM slot
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+const di = StyleSheet.create({
+  toggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: "white",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxActive: {
+    backgroundColor: "#1A56FF",
+    borderColor: "#1A56FF",
+  },
+  title: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#0D0D0D",
+  },
+  sub: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+  },
+});
+
 export default function Step2IMeiScreen() {
   const insets = useSafeAreaInsets();
-  const { data, setImei, updateDetails } = useDeviceRegistration();
-  const [digits, setDigits] = useState("");
-  const [verifyState, setVerifyState] = useState<VerifyState>("idle");
+  const { data, setImei, setImei2, updateDetails } = useDeviceRegistration();
+
+  const [digits1, setDigits1] = useState("");
+  const [verifyState1, setVerifyState1] = useState<VerifyState>("idle");
+
+  const [hasDualImei, setHasDualImei] = useState(false);
+  const [digits2, setDigits2] = useState("");
+  const [verifyState2, setVerifyState2] = useState<VerifyState>("idle");
+
   const [showTooltip, setShowTooltip] = useState(false);
 
-  const isComplete = digits.length === 15;
-  const isReady = verifyState === "valid";
+  const imei1Complete = digits1.length === 15;
+  const imei2Complete = digits2.length === 15;
+  const isReady = hasDualImei
+    ? verifyState1 === "valid" && verifyState2 === "valid"
+    : verifyState1 === "valid";
 
-  const handleVerify = useCallback(() => {
-    if (!isComplete) return;
-    setVerifyState("loading");
-    setTimeout(() => {
-      if (digits === "000000000000000") {
-        setVerifyState("invalid");
-      } else if (digits === "111111111111111") {
-        setVerifyState("stolen");
-      } else {
-        setVerifyState("valid");
-        if (data.brand !== "Samsung" || data.model !== "Galaxy A54") {
-          updateDetails({ brand: "Samsung", model: "Galaxy A54" });
+  const runVerify = useCallback(
+    (digits: string, setState: (s: VerifyState) => void) => {
+      setState("loading");
+      setTimeout(() => {
+        if (digits === "000000000000000") {
+          setState("invalid");
+        } else if (digits === "111111111111111") {
+          setState("stolen");
+        } else {
+          setState("valid");
         }
-      }
-    }, 1400);
-  }, [digits, isComplete, data.brand, data.model, updateDetails]);
+      }, 1400);
+    },
+    [],
+  );
 
-  const handleDigitsChange = useCallback((d: string) => {
-    setDigits(d);
-    setVerifyState("idle");
-  }, []);
+  const handleVerify1 = useCallback(() => {
+    if (!imei1Complete) return;
+    runVerify(digits1, setVerifyState1);
+    if (data.brand !== "Samsung" || data.model !== "Galaxy A54") {
+      updateDetails({ brand: "Samsung", model: "Galaxy A54" });
+    }
+  }, [digits1, imei1Complete, data.brand, data.model, runVerify, updateDetails]);
+
+  const handleVerify2 = useCallback(() => {
+    if (!imei2Complete) return;
+    runVerify(digits2, setVerifyState2);
+  }, [digits2, imei2Complete, runVerify]);
 
   const handleBack = useCallback(() => {
     router.back();
   }, []);
 
   const handleNext = useCallback(() => {
-    if (isReady) {
-      setImei(digits);
-      router.push("/(user)/register-device/step3" as any);
-    }
-  }, [isReady, digits, setImei]);
+    if (!isReady) return;
+    setImei(digits1);
+    if (hasDualImei) setImei2(digits2);
+    router.push("/(user)/register-device/step3" as any);
+  }, [isReady, digits1, digits2, hasDualImei, setImei, setImei2]);
 
   return (
     <View style={s.screen}>
@@ -124,16 +209,39 @@ export default function Step2IMeiScreen() {
 
         <View style={s.inputSection}>
           <IMEIInputCard
-            digits={digits}
-            onChangeDigits={handleDigitsChange}
-            verifyState={verifyState}
-            onVerify={handleVerify}
+            digits={digits1}
+            onChangeDigits={(d) => { setDigits1(d); setVerifyState1("idle"); }}
+            verifyState={verifyState1}
+            onVerify={handleVerify1}
           />
 
-          {(verifyState === "valid" ||
-            verifyState === "invalid" ||
-            verifyState === "stolen") && (
-            <VerificationCard state={verifyState} />
+          {(verifyState1 === "valid" ||
+            verifyState1 === "invalid" ||
+            verifyState1 === "stolen") && (
+            <VerificationCard state={verifyState1} />
+          )}
+
+          <DualImeiToggle
+            enabled={hasDualImei}
+            onToggle={() => setHasDualImei((p) => !p)}
+          />
+
+          {hasDualImei && (
+            <View style={{ marginTop: 12 }}>
+              <Text style={s.imei2Label}>IMEI 2 (second SIM slot)</Text>
+              <IMEIInputCard
+                digits={digits2}
+                onChangeDigits={(d) => { setDigits2(d); setVerifyState2("idle"); }}
+                verifyState={verifyState2}
+                onVerify={handleVerify2}
+              />
+
+              {(verifyState2 === "valid" ||
+                verifyState2 === "invalid" ||
+                verifyState2 === "stolen") && (
+                <VerificationCard state={verifyState2} />
+              )}
+            </View>
           )}
 
           <OCRActionButtons />
@@ -220,6 +328,12 @@ const s = StyleSheet.create({
   },
 
   inputSection: { paddingHorizontal: 20, paddingTop: 20 },
+  imei2Label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#64748B",
+    marginBottom: 8,
+  },
 
   bottomArea: {
     position: "absolute",
