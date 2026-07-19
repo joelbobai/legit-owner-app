@@ -14,6 +14,7 @@ import {
 } from "@expo-google-fonts/inter";
 
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
+import { AuthProvider } from "@/context/AuthContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -48,9 +49,11 @@ export default function RootLayout() {
   }
 
   return (
-    <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-      <StatusBar style="dark" />
-      <Slot />
-    </View>
+    <AuthProvider>
+      <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+        <StatusBar style="dark" />
+        <Slot />
+      </View>
+    </AuthProvider>
   );
 }

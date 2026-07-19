@@ -1,7 +1,11 @@
 import { memo, useCallback, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
+import axios from "axios";
+
+import { API_BASE_URL, ENDPOINTS } from "@/constants/api";
+import { useAuth } from "@/context/AuthContext";
 
 function LogoutIcon() {
   return (
@@ -30,43 +34,93 @@ function ChevronDownIcon({ color = "#DC2626" }: { color?: string }) {
   );
 }
 
-function DangerZone() {
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const contentHeight = useSharedValue(0);
-  const contentOpacity = useSharedValue(0);
+function useExpandable() {
+  const [open, setOpen] = useState(false);
+  const height = useSharedValue(0);
+  const opacity = useSharedValue(0);
 
-  const toggleDelete = useCallback(() => {
-    if (deleteOpen) {
-      contentHeight.value = withTiming(0, { duration: 200 });
-      contentOpacity.value = withTiming(0, { duration: 150 });
+  const toggle = useCallback(() => {
+    if (open) {
+      height.value = withTiming(0, { duration: 200 });
+      opacity.value = withTiming(0, { duration: 150 });
     } else {
-      contentHeight.value = withTiming(100, { duration: 250 });
-      contentOpacity.value = withTiming(1, { duration: 200 });
+      height.value = withTiming(100, { duration: 250 });
+      opacity.value = withTiming(1, { duration: 200 });
     }
-    setDeleteOpen((v) => !v);
-  }, [deleteOpen, contentHeight, contentOpacity]);
+    setOpen((v) => !v);
+  }, [open, height, opacity]);
 
-  const contentStyle = useAnimatedStyle(() => ({
-    maxHeight: contentHeight.value,
-    opacity: contentOpacity.value,
+  const style = useAnimatedStyle(() => ({
+    maxHeight: height.value,
+    opacity: opacity.value,
     overflow: "hidden",
   }));
+
+  return { open, toggle, style };
+}
+
+function DangerZone() {
+  const { token, logout } = useAuth();
+  const logoutAccordion = useExpandable();
+  const deleteAccordion = useExpandable();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleLogout = useCallback(async () => {
+    setLoggingOut(true);
+    try {
+      await axios.post(
+        `${API_BASE_URL}${ENDPOINTS.LOGOUT}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+    } catch {}
+    await logout();
+  }, [token, logout]);
+
+  const handleDelete = useCallback(async () => {
+    setDeleting(true);
+    try {
+      await axios.delete(
+        `${API_BASE_URL}${ENDPOINTS.PROFILE}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+    } catch {}
+    await logout();
+  }, [token, logout]);
 
   return (
     <View style={s.wrap}>
       {/* Logout */}
-      <View style={s.menuItem}>
+      <Pressable onPress={logoutAccordion.toggle} style={s.menuItem}>
         <View style={s.iconWrap}>
           <LogoutIcon />
         </View>
         <Text style={s.label}>Logout</Text>
-        <View style={s.chevronWrap}>
-          <ChevronDownIcon />
+        <ChevronDownIcon />
+      </Pressable>
+
+      <Animated.View style={logoutAccordion.style}>
+        <View style={s.content}>
+          <Text style={s.warningText}>Are you sure you want to log out?</Text>
+          <Pressable
+            style={s.confirmBtn}
+            onPress={handleLogout}
+            disabled={loggingOut}
+          >
+            {loggingOut ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <Text style={s.confirmText}>Confirm Logout</Text>
+            )}
+          </Pressable>
         </View>
-      </View>
+      </Animated.View>
+
+      <View style={s.divider} />
 
       {/* Delete Account */}
-      <Pressable onPress={toggleDelete} style={s.menuItem}>
+      <Pressable onPress={deleteAccordion.toggle} style={s.menuItem}>
         <View style={s.iconWrap}>
           <TrashIcon />
         </View>
@@ -74,13 +128,21 @@ function DangerZone() {
         <ChevronDownIcon />
       </Pressable>
 
-      <Animated.View style={contentStyle}>
-        <View style={s.deleteContent}>
+      <Animated.View style={deleteAccordion.style}>
+        <View style={s.content}>
           <Text style={s.warningText}>
             This action cannot be undone. All your data, devices and certificates will be permanently removed.
           </Text>
-          <Pressable style={s.confirmBtn}>
-            <Text style={s.confirmText}>Confirm Delete</Text>
+          <Pressable
+            style={s.confirmBtn}
+            onPress={handleDelete}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <Text style={s.confirmText}>Confirm Delete</Text>
+            )}
           </Pressable>
         </View>
       </Animated.View>
@@ -121,10 +183,12 @@ const s = StyleSheet.create({
     fontWeight: "600",
     color: "#DC2626",
   },
-  chevronWrap: {
-    marginLeft: "auto",
+  divider: {
+    height: 1,
+    backgroundColor: "#F1F5F9",
+    marginLeft: 58,
   },
-  deleteContent: {
+  content: {
     paddingHorizontal: 20,
     paddingBottom: 16,
     gap: 8,

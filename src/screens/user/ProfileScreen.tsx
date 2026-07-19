@@ -9,6 +9,7 @@ import ProfileHeader from "@/components/tracking/profile/ProfileHeader";
 import StatsCard from "@/components/tracking/profile/StatsCard";
 import SettingsMenuItem from "@/components/tracking/profile/SettingsMenuItem";
 import DangerZone from "@/components/tracking/profile/DangerZone";
+import { useAuth } from "@/context/AuthContext";
 
 function ArrowLeftIcon() {
   return (
@@ -103,8 +104,16 @@ function PrivacyIcon() {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
 
   const handleBack = useCallback(() => {}, []);
+
+  const fullName = user?.fullName ?? "User";
+  const phone = user?.phoneNumber ?? "";
+  const email = user?.email ?? "";
+  const memberSince = user?.memberSince
+    ? new Date(user.memberSince).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+    : "N/A";
 
   return (
     <View style={s.screen}>
@@ -128,14 +137,14 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         <ProfileHeader
-          name="Chukwuemeka Okoro"
-          phone="+234 801 234 5678"
-          email="chukwuemeka@email.com"
-          idVerified
-          faceVerified
+          name={fullName}
+          phone={phone}
+          email={email}
+          idVerified={user?.verificationStatus === "id_submitted" || user?.verificationStatus === "verified"}
+          faceVerified={user?.faceVerified ?? false}
         />
 
-        <StatsCard deviceCount={3} memberSince="January 2025" />
+        <StatsCard deviceCount={3} memberSince={memberSince} />
 
         <View style={s.settingsCard}>
           <SettingsMenuItem icon={<UserIcon />} label="Edit Profile" />

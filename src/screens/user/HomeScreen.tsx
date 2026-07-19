@@ -15,6 +15,7 @@ import { ActionCard } from "@/components/home/ActionCard";
 import { ActivityCard } from "@/components/home/ActivityCard";
 import { HomeHeader } from "@/components/home/HomeHeader";
 import { SectionRowHeader } from "@/components/home/SectionRowHeader";
+import { useAuth } from "@/context/AuthContext";
 
 const { width: SW } = Dimensions.get("window");
 
@@ -86,6 +87,7 @@ function HeroCard() {
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
 
   return (
     <View style={s.screen}>
@@ -93,7 +95,7 @@ export default function HomeScreen() {
       <View style={s.blobTR} pointerEvents="none" />
 
       <View style={{ height: insets.top, backgroundColor: "white" }} />
-      <HomeHeader />
+      <HomeHeader name={user?.fullName?.split(" ")[0]} />
 
       <ScrollView
         style={{ flex: 1 }}

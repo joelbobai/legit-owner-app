@@ -1,13 +1,23 @@
+import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BellIcon, SearchIcon } from '@/components/Icon';
 
-export function HomeHeader() {
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return { text: "Good morning", emoji: "☀️" };
+  if (h < 17) return { text: "Good afternoon", emoji: "🌤️" };
+  return { text: "Good evening", emoji: "🌙" };
+}
+
+export function HomeHeader({ name }: { name?: string }) {
+  const greeting = useMemo(getGreeting, []);
+
   return (
     <View style={s.header}>
       <View>
-        <Text style={s.greetingSub}>Good morning ☀️</Text>
-        <Text style={s.greetingName}>Chukwuemeka 👋</Text>
+        <Text style={s.greetingSub}>{greeting.text} {greeting.emoji}</Text>
+        <Text style={s.greetingName}>{name ?? 'User'} 👋</Text>
       </View>
       <View style={s.icons}>
         <Pressable style={s.iconBtn}>

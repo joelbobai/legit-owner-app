@@ -1,5 +1,4 @@
 import axios from "axios";
-import * as SecureStore from "expo-secure-store";
 import { router } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -41,6 +40,7 @@ import {
 } from "@/components/Icon";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { API_BASE_URL, ENDPOINTS } from "@/constants/api";
+import { useAuth } from "@/context/AuthContext";
 
 const { width: SW } = Dimensions.get("window");
 const HEADER_H = 240;
@@ -206,6 +206,7 @@ function PasswordField({
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
+  const { login } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -233,10 +234,7 @@ export default function LoginScreen() {
 
       const { token, user } = response.data;
 
-      await SecureStore.setItemAsync("authToken", token);
-      if (user) {
-        await SecureStore.setItemAsync("user", JSON.stringify(user));
-      }
+      await login(token, user);
 
       router.replace("/(user)" as any);
     } catch (err: any) {
@@ -247,7 +245,7 @@ export default function LoginScreen() {
     } finally {
       setLoading(false);
     }
-  }, [identifier, password]);
+  }, [identifier, password, login]);
 
   const renderIdentifierIcon = useCallback(
     (focused: boolean) => (
