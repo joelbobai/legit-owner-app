@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { LinearGradient as ExpoLinearGradient } from "expo-linear-gradient";
+import * as ImagePicker from "expo-image-picker";
+import axios from "axios";
 import Svg, { Circle, Defs, Path, Pattern, Rect } from "react-native-svg";
 
 import { AppBar, StepBadge } from "@/components/AppBar";
@@ -13,6 +15,7 @@ import Tooltip from "@/components/register-device/Tooltip";
 import OCRActionButtons from "@/components/register-device/OCRActionButtons";
 
 import { useDeviceRegistration } from "@/context/DeviceRegistrationContext";
+import { API_BASE_URL } from "@/constants/api";
 
 type VerifyState = "idle" | "loading" | "valid" | "invalid" | "stolen";
 
@@ -98,6 +101,66 @@ export default function Step2IMeiScreen() {
   const [verifyState2, setVerifyState2] = useState<VerifyState>("idle");
 
   const [showTooltip, setShowTooltip] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+
+  const handleOCRExtraction = useCallback(async (uri: string) => {
+    setOcrLoading(true);
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      const ocrRes = await axios.post(`${API_BASE_URL}/ocr/extract-imei`, {
+        imageData: base64,
+        mimeType: blob.type,
+      });
+
+      const imeis: string[] = ocrRes.data.imeis;
+      if (imeis.length > 0) {
+        setDigits1(imeis[0]);
+        setVerifyState1("idle");
+        if (imeis.length > 1) {
+          setHasDualImei(true);
+          setDigits2(imeis[1]);
+        }
+      }
+    } catch {
+      // silent — user can type IMEI manually
+    } finally {
+      setOcrLoading(false);
+    }
+  }, []);
+
+  const handlePickFromGallery = useCallback(async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images" as any],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      await handleOCRExtraction(result.assets[0].uri);
+    }
+  }, [handleOCRExtraction]);
+
+  const handleTakePhoto = useCallback(async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) return;
+
+    const result = await ImagePicker.launchCameraAsync({
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      await handleOCRExtraction(result.assets[0].uri);
+    }
+  }, [handleOCRExtraction]);
 
   const imei1Complete = digits1.length === 15;
   const imei2Complete = digits2.length === 15;
@@ -244,7 +307,17 @@ export default function Step2IMeiScreen() {
             </View>
           )}
 
-          <OCRActionButtons />
+          {ocrLoading && (
+            <View style={s.ocrLoading}>
+              <ActivityIndicator size="small" color="#1A56FF" />
+              <Text style={s.ocrLoadingText}>Scanning image for IMEI…</Text>
+            </View>
+          )}
+
+          <OCRActionButtons
+            onUploadScreenshot={handlePickFromGallery}
+            onTakePhoto={handleTakePhoto}
+          />
         </View>
       </ScrollView>
 
@@ -328,6 +401,21 @@ const s = StyleSheet.create({
   },
 
   inputSection: { paddingHorizontal: 20, paddingTop: 20 },
+  ocrLoading: {
+    marginTop: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 12,
+    backgroundColor: "#EEF3FF",
+    borderRadius: 12,
+  },
+  ocrLoadingText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1A56FF",
+  },
   imei2Label: {
     fontSize: 13,
     fontWeight: "600",
