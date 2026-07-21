@@ -1,18 +1,28 @@
-import { memo, useCallback } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Circle, Path, Rect } from "react-native-svg";
+import { memo, useCallback, useState } from "react";
+import {
+  Image,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import Svg, { Path } from "react-native-svg";
+
+export const PHOTO_LABELS = ["Front", "Back", "Left", "Right", "Receipt", "Box"] as const;
 
 type PhotoSlotProps = {
   label: string;
+  uri: string | null;
   index: number;
-  photos: (string | null)[];
-  onAdd: (i: number) => void;
+  onPick: (i: number) => void;
   onRemove: (i: number) => void;
 };
 
 function CameraIcon() {
   return (
-    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <Svg width="22" height="22" viewBox="0 0 24 24" fill="none">
       <Path
         d="M12 8C9.8 8 8 9.8 8 12C8 14.2 9.8 16 12 16C14.2 16 16 14.2 16 12C16 9.8 14.2 8 12 8Z"
         stroke="#94A3B8"
@@ -29,18 +39,17 @@ function CameraIcon() {
   );
 }
 
-function PhotoPreview() {
+function CheckIcon() {
   return (
-    <View style={s.preview}>
-      <Rect x="2" y="4" width="20" height="16" rx="2" stroke="#1A56FF" strokeWidth="1.5" fill="none" />
-      <Circle cx="9" cy="11" r="2" stroke="#1A56FF" strokeWidth="1.3" fill="none" />
+    <Svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <Path
-        d="M15.5 9.5L20 14V16C20 17.1 19.1 18 18 18H6C4.9 18 4 17.1 4 16V8C4 6.9 4.9 6 6 6H12"
+        d="M3 8L6 11L13 4"
         stroke="#1A56FF"
-        strokeWidth="1.5"
+        strokeWidth="1.8"
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
-    </View>
+    </Svg>
   );
 }
 
@@ -57,19 +66,21 @@ function XIcon() {
   );
 }
 
-function PhotoSlot({ label, index, photos, onAdd, onRemove }: PhotoSlotProps) {
-  const hasPhoto = photos[index] != null;
+function PhotoSlot({ label, uri, index, onPick, onRemove }: PhotoSlotProps) {
+  const hasPhoto = uri != null;
 
   return (
     <View style={s.slotCol}>
       <Pressable
         style={[s.slot, hasPhoto && s.slotFilled]}
-        onPress={() => !hasPhoto && onAdd(index)}
+        onPress={() => !hasPhoto && onPick(index)}
       >
         {hasPhoto ? (
           <>
-            <PhotoPreview />
-            <Text style={s.slotPhotoLabel}>Photo {index + 1}</Text>
+            <Image source={{ uri }} style={s.slotImage} />
+            <View style={s.checkBadge}>
+              <CheckIcon />
+            </View>
             <Pressable
               style={s.removeBtn}
               onPress={() => onRemove(index)}
@@ -81,7 +92,7 @@ function PhotoSlot({ label, index, photos, onAdd, onRemove }: PhotoSlotProps) {
         ) : (
           <>
             <CameraIcon />
-            <Text style={s.slotIconLabel}>{label}</Text>
+            <Text style={s.slotIconLabel}>Tap</Text>
           </>
         )}
       </Pressable>
@@ -92,42 +103,95 @@ function PhotoSlot({ label, index, photos, onAdd, onRemove }: PhotoSlotProps) {
 
 type Props = {
   photos: (string | null)[];
-  onAdd: (i: number) => void;
+  onAdd: (i: number, uri: string) => void;
   onRemove: (i: number) => void;
 };
 
 function PhotoUploadCard({ photos, onAdd, onRemove }: Props) {
+  const [pickerIndex, setPickerIndex] = useState<number | null>(null);
+
+  const handleGallery = useCallback(async () => {
+    if (pickerIndex == null) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images" as any],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      onAdd(pickerIndex, result.assets[0].uri);
+    }
+    setPickerIndex(null);
+  }, [pickerIndex, onAdd]);
+
+  const handleCamera = useCallback(async () => {
+    if (pickerIndex == null) return;
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      setPickerIndex(null);
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      onAdd(pickerIndex, result.assets[0].uri);
+    }
+    setPickerIndex(null);
+  }, [pickerIndex, onAdd]);
+
+  const handlePick = useCallback((i: number) => {
+    setPickerIndex(i);
+  }, []);
+
   return (
     <View style={s.card}>
-      <Text style={s.title}>
-        Add Device Photos (Optional — up to 3)
-      </Text>
+      <Text style={s.title}>Add Device Photos (Optional)</Text>
 
-      <View style={s.row}>
-        <PhotoSlot
-          label="Front"
-          index={0}
-          photos={photos}
-          onAdd={onAdd}
-          onRemove={onRemove}
-        />
-        <PhotoSlot
-          label="Back"
-          index={1}
-          photos={photos}
-          onAdd={onAdd}
-          onRemove={onRemove}
-        />
-        <PhotoSlot
-          label="Side/Angle"
-          index={2}
-          photos={photos}
-          onAdd={onAdd}
-          onRemove={onRemove}
-        />
+      <View style={s.grid}>
+        {PHOTO_LABELS.map((label, i) => (
+          <PhotoSlot
+            key={label}
+            label={label}
+            uri={photos[i]}
+            index={i}
+            onPick={handlePick}
+            onRemove={onRemove}
+          />
+        ))}
       </View>
 
-      <Text style={s.hint}>Tap to upload or take photo</Text>
+      <Text style={s.hint}>Tap an empty slot to take or choose a photo</Text>
+
+      <Modal
+        visible={pickerIndex != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerIndex(null)}
+      >
+        <Pressable
+          style={s.modalOverlay}
+          onPress={() => setPickerIndex(null)}
+        >
+          <Pressable style={s.actionSheet} onPress={() => {}}>
+            <View style={s.actionHandle} />
+            <Pressable style={s.actionBtn} onPress={handleCamera}>
+              <Text style={s.actionBtnText}>Take Photo</Text>
+            </Pressable>
+            <View style={s.actionDivider} />
+            <Pressable style={s.actionBtn} onPress={handleGallery}>
+              <Text style={s.actionBtnText}>Choose from Gallery</Text>
+            </Pressable>
+            <View style={s.actionDivider} />
+            <Pressable
+              style={s.actionBtn}
+              onPress={() => setPickerIndex(null)}
+            >
+              <Text style={[s.actionBtnText, { color: "#DC2626" }]}>
+                Cancel
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -148,19 +212,21 @@ const s = StyleSheet.create({
     fontWeight: "600",
     color: "#0D0D0D",
   },
-  row: {
+  grid: {
     flexDirection: "row",
-    gap: 12,
+    flexWrap: "wrap",
+    gap: 10,
     marginTop: 16,
     justifyContent: "center",
   },
   slotCol: {
     alignItems: "center",
-    gap: 6,
+    gap: 4,
+    width: "30%",
   },
   slot: {
-    width: 100,
-    height: 100,
+    width: "100%",
+    aspectRatio: 1,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: "#E2E8F0",
@@ -175,18 +241,21 @@ const s = StyleSheet.create({
     borderColor: "#1A56FF",
     backgroundColor: "#EEF3FF",
   },
-  preview: {
-    width: 24,
-    height: 24,
+  slotImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 10,
+  },
+  checkBadge: {
+    position: "absolute",
+    top: 4,
+    left: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#EEF3FF",
     alignItems: "center",
     justifyContent: "center",
-  },
-  slotPhotoLabel: {
-    position: "absolute",
-    bottom: 8,
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#1A56FF",
   },
   slotIconLabel: {
     fontSize: 10,
@@ -220,6 +289,41 @@ const s = StyleSheet.create({
     marginTop: 12,
     fontSize: 11,
     color: "#CBD5E1",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  actionSheet: {
+    backgroundColor: "white",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 40,
+    alignItems: "center",
+  },
+  actionHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 2,
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  actionBtn: {
+    width: "100%",
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  actionDivider: {
+    width: "80%",
+    height: 1,
+    backgroundColor: "#F1F5F9",
+  },
+  actionBtnText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#0D0D0D",
   },
 });
 

@@ -15,6 +15,7 @@ import { formatDisplayDate } from "@/data/deviceFormOptions";
 
 type Props = {
   data: DeviceRegistrationData;
+  ownerName?: string;
 };
 
 type InfoRowProps = { label: string; value: string };
@@ -38,8 +39,8 @@ const DEVICE_DETAILS = [
 
 function conditionLabel(v: string): string {
   if (v === "new") return "New";
-  if (v === "good") return "Used — Good";
-  if (v === "fair") return "Used — Fair";
+  if (v === "used_good") return "Used — Good";
+  if (v === "used_fair") return "Used — Fair";
   return v || "—";
 }
 
@@ -81,7 +82,7 @@ function DeviceIcon() {
   );
 }
 
-function DeviceSummaryCard({ data }: Props) {
+function DeviceSummaryCard({ data, ownerName }: Props) {
   const [copied, setCopied] = useState(false);
   const copiedOpacity = useSharedValue(0);
 
@@ -178,7 +179,7 @@ function DeviceSummaryCard({ data }: Props) {
       <View style={s.ownerRow}>
         <Text style={s.ownerLabel}>Current Owner</Text>
         <View style={s.ownerRight}>
-          <Text style={s.ownerName}>Chukwuemeka Okoro</Text>
+          <Text style={s.ownerName}>{ownerName || "Owner"}</Text>
           <View style={s.verifiedBadge}>
             <Svg
               width="13"

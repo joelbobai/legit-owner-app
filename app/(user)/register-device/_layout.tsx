@@ -11,6 +11,7 @@ export default function RegisterDeviceLayout() {
         <Stack.Screen name="step3" />
         <Stack.Screen name="step4" />
         <Stack.Screen name="complete" />
+        <Stack.Screen name="continue" />
       </Stack>
     </DeviceRegistrationProvider>
   );

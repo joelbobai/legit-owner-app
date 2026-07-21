@@ -3,10 +3,17 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import Svg, { Circle, Path } from "react-native-svg";
 
+type DeviceInfo = {
+  brandName?: string;
+  model?: string;
+  imei?: string;
+};
+
 type VerifyState = "valid" | "invalid" | "stolen";
 
 type Props = {
   state: VerifyState | null;
+  deviceInfo?: DeviceInfo | null;
 };
 
 function CheckCircle({ size = 32, color = "#16A34A" }) {
@@ -55,7 +62,7 @@ function DeviceInfoRow({ label, value, editable }: { label: string; value: strin
   );
 }
 
-function VerificationCard({ state }: Props) {
+function VerificationCard({ state, deviceInfo }: Props) {
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(-8);
 
@@ -77,16 +84,19 @@ function VerificationCard({ state }: Props) {
   if (!state) return null;
 
   if (state === "valid") {
+    const brand = deviceInfo?.brandName || "Unknown";
+    const model = deviceInfo?.model || "Unknown";
+
     return (
       <Animated.View style={[s.validCard, animStyle]}>
         <View style={s.cardRow}>
           <CheckCircle size={32} color="#16A34A" />
           <View style={{ flex: 1 }}>
-            <Text style={s.validTitle}>Valid IMEI — Samsung Galaxy A54 detected</Text>
+            <Text style={s.validTitle}>Valid IMEI — {brand} {model} detected</Text>
             <View style={s.infoSection}>
-              <DeviceInfoRow label="Brand" value="Samsung" editable />
-              <DeviceInfoRow label="Model" value="Galaxy A54" editable />
-              <DeviceInfoRow label="Manufacture Year" value="2024" editable={false} />
+              <DeviceInfoRow label="Brand" value={brand} editable />
+              <DeviceInfoRow label="Model" value={model} editable />
+              <DeviceInfoRow label="IMEI" value={deviceInfo?.imei || ""} editable={false} />
             </View>
           </View>
         </View>

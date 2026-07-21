@@ -13,8 +13,8 @@ type Props = {
 
 const CONDITIONS = [
   { id: "new", label: "New", color: "#16A34A" },
-  { id: "good", label: "Used — Good", color: "#1A56FF" },
-  { id: "fair", label: "Used — Fair", color: "#F59E0B" },
+  { id: "used_good", label: "Used — Good", color: "#1A56FF" },
+  { id: "used_fair", label: "Used — Fair", color: "#F59E0B" },
 ];
 
 function ConditionPill({

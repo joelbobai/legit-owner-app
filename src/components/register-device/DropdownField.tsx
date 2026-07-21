@@ -11,6 +11,7 @@ type Props = {
   onSelect: (v: string) => void;
   placeholder?: string;
   prefill?: boolean;
+  hideLabel?: boolean;
 };
 
 function ChevronDown({ open }: { open: boolean }) {
@@ -36,11 +37,13 @@ function DropdownField({
   onSelect,
   placeholder,
   prefill,
+  hideLabel,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const hasValue = Boolean(value);
 
   const selected = options.find((o) =>
-    typeof o === "object" ? o.name === value : o === value
+    typeof o === "object" ? o.name === value : o === value,
   );
 
   const handleSelect = useCallback(
@@ -48,37 +51,52 @@ function DropdownField({
       onSelect(v);
       setOpen(false);
     },
-    [onSelect]
+    [onSelect],
   );
 
   return (
     <View>
-      <View style={s.labelRow}>
-        <Text style={s.label}>{label}</Text>
-        {prefill && (
-          <View style={s.prefillBadge}>
-            <Text style={s.prefillBadgeText}>From IMEI</Text>
-          </View>
-        )}
-      </View>
+      {!hideLabel && (
+        <View style={s.labelRow}>
+          <Text style={s.label}>{label}</Text>
+          {prefill && (
+            <View style={s.prefillBadge}>
+              <Text style={s.prefillBadgeText}>From IMEI</Text>
+            </View>
+          )}
+        </View>
+      )}
 
       <Pressable
-        style={[s.inputBox, open && s.inputBoxOpen]}
+        style={[s.inputBox, (open || hasValue) && s.inputBoxActive]}
         onPress={() => setOpen(!open)}
       >
-        {value && selected && typeof selected === "object" && "color" in selected ? (
+        {value &&
+        selected &&
+        typeof selected === "object" &&
+        "color" in selected ? (
           <View style={s.valueRow}>
             <View
               style={[
                 s.colorDot,
-                { backgroundColor: (selected as { name: string; color: string }).color },
+                {
+                  backgroundColor: (selected as { name: string; color: string })
+                    .color,
+                },
               ]}
             />
-            <Text style={s.valueText}>{value}</Text>
+            <Text style={[s.valueText, hasValue && s.valueSelected]}>
+              {value}
+            </Text>
           </View>
         ) : (
-          <Text style={[s.valueText, !value && s.placeholderText]}>
-            {value || placeholder || "Select"}
+          <Text
+            style={[
+              s.valueText,
+              hasValue ? s.valueSelected : s.placeholderText,
+            ]}
+          >
+            {value || placeholder || ""}
           </Text>
         )}
         <ChevronDown open={open} />
@@ -89,7 +107,8 @@ function DropdownField({
           {options.map((opt, i) => {
             const optValue = typeof opt === "string" ? opt : opt.name;
             const active = optValue === value;
-            const dotColor = typeof opt === "object" && "color" in opt ? opt.color : undefined;
+            const dotColor =
+              typeof opt === "object" && "color" in opt ? opt.color : undefined;
             return (
               <Pressable
                 key={i}
@@ -146,8 +165,13 @@ const s = StyleSheet.create({
     height: 52,
     paddingHorizontal: 14,
   },
-  inputBoxOpen: {
+  inputBoxActive: {
     borderColor: "#1A56FF",
+    shadowColor: "#1A56FF",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   valueRow: {
     flexDirection: "row",
@@ -168,6 +192,9 @@ const s = StyleSheet.create({
     fontWeight: "600",
     color: "#0D0D0D",
   },
+  valueSelected: {
+    color: "#1A56FF",
+  },
   placeholderText: {
     fontWeight: "400",
     color: "#94A3B8",
@@ -184,7 +211,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
     padding: 4,
-    maxHeight: 200,
+    maxHeight: 500,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,

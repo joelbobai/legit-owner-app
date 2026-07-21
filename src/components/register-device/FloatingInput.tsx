@@ -74,9 +74,14 @@ function FloatingInput({
   }
 
   return (
-    <View>
-      <View style={[s.inputBox, focused && s.inputBoxFocused]}>
+    <View collapsable={false}>
+      <View style={s.labelRow}>
+        <Text style={s.label}>{label}</Text>
+      </View>
+
+      <View collapsable={false} style={[s.inputBox, focused && s.inputBoxFocused]}>
         <TextInput
+          ref={inputRef}
           style={s.input}
           value={value}
           onChangeText={onChangeText}
@@ -87,6 +92,7 @@ function FloatingInput({
           autoCapitalize={autoCapitalize}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          nativeID={`fi-${label}`}
         />
       </View>
     </View>
@@ -155,6 +161,14 @@ const s = StyleSheet.create({
     right: 0,
     bottom: 0,
     opacity: 0,
+  },
+  labelRow: {
+    marginBottom: 6,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#0D0D0D",
   },
   inputBox: {
     flexDirection: "row",

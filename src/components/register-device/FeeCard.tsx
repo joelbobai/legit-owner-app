@@ -1,5 +1,6 @@
 import { memo } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -23,6 +24,8 @@ type Props = {
   onApplyPromo: () => void;
   showPromo: boolean;
   onTogglePromo: () => void;
+  promoLoading?: boolean;
+  promoError?: string;
 };
 
 function FeeCard({
@@ -34,6 +37,8 @@ function FeeCard({
   onApplyPromo,
   showPromo,
   onTogglePromo,
+  promoLoading,
+  promoError,
 }: Props) {
   const total = baseFee - discount;
 
@@ -114,14 +119,25 @@ function FeeCard({
                     style={s.promoInput}
                     autoCapitalize="characters"
                   />
-                  <Pressable style={s.applyBtn} onPress={onApplyPromo}>
-                    <Text style={s.applyBtnText}>Apply</Text>
+                  <Pressable
+                    style={[s.applyBtn, promoLoading && s.applyBtnLoading]}
+                    onPress={onApplyPromo}
+                    disabled={promoLoading}
+                  >
+                    {promoLoading ? (
+                      <ActivityIndicator size="small" color="#1A56FF" />
+                    ) : (
+                      <Text style={s.applyBtnText}>Apply</Text>
+                    )}
                   </Pressable>
                 </View>
-                <Text style={s.promoHint}>
-                  Hint: try{" "}
-                  <Text style={s.promoHintCode}>LEGIT100</Text>
-                </Text>
+                {promoError ? (
+                  <Text style={s.promoError}>{promoError}</Text>
+                ) : (
+                  <Text style={s.promoHint}>
+                    Have a promo code? Enter it above
+                  </Text>
+                )}
               </Animated.View>
             )}
           </>
@@ -146,7 +162,7 @@ function FeeCard({
               />
             </Svg>
             <Text style={s.promoSuccessText}>
-              PROMO APPLIED — ₦100 OFF · New total: ₦{total}
+              PROMO APPLIED — ₦{discount} OFF · New total: ₦{total}
             </Text>
           </Animated.View>
         )}
@@ -255,6 +271,10 @@ const s = StyleSheet.create({
     borderColor: "#1A56FF",
     alignItems: "center",
     justifyContent: "center",
+    minWidth: 70,
+  },
+  applyBtnLoading: {
+    opacity: 0.6,
   },
   applyBtnText: {
     fontSize: 13,
@@ -268,9 +288,11 @@ const s = StyleSheet.create({
     fontFamily: FontFamily.regular,
     marginTop: 6,
   },
-  promoHintCode: {
-    color: "#1A56FF",
-    fontWeight: "600",
+  promoError: {
+    fontSize: 11,
+    color: "#DC2626",
+    fontFamily: FontFamily.regular,
+    marginTop: 6,
   },
   promoSuccess: {
     flexDirection: "row",

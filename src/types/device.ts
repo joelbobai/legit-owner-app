@@ -1,4 +1,4 @@
-export type DeviceStatus = "active" | "transferred" | "stolen";
+export type DeviceStatus = "pending" | "active" | "transferred" | "stolen";
 
 export type Device = {
   id: string;
@@ -22,6 +22,7 @@ export type Device = {
     longitude: number;
   };
   lastSeen?: string;
+  registrationStep?: number;
 };
 
 export type StatusConfig = {

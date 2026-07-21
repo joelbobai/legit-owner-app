@@ -11,9 +11,12 @@ export type DeviceRegistrationData = {
   storage: string;
   color: string;
   serialNumber: string;
+  modelNumber: string;
   purchaseDate: string;
   condition: string;
   notes: string;
+  deviceId: string;
+  imeiProofImageUrl: string;
 };
 
 const INITIAL_DATA: DeviceRegistrationData = {
@@ -27,9 +30,12 @@ const INITIAL_DATA: DeviceRegistrationData = {
   storage: "",
   color: "",
   serialNumber: "",
+  modelNumber: "",
   purchaseDate: "",
   condition: "",
   notes: "",
+  deviceId: "",
+  imeiProofImageUrl: "",
 };
 
 type ContextType = {

@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Dimensions,
   Pressable,
   ScrollView,
@@ -9,85 +10,58 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle, Path, Rect, Line } from "react-native-svg";
-
+import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { router } from "expo-router";
+import axios from "axios";
+
+import { API_BASE_URL } from "@/constants/api";
+import { useAuth } from "@/context/AuthContext";
 import { ChevronRightIcon, CopyIcon, FilterListIcon, GridIcon, PlusIcon, SearchIcon, SortArrowsIcon } from "@/components/Icon";
 import { DotGrid } from "@/components/DotGrid";
 
 const { width: SW } = Dimensions.get("window");
 
-type DeviceStatus = "active" | "transferred" | "stolen";
+type DeviceStatus = "pending" | "active" | "transferred" | "stolen";
 
-type Device = {
-  id: string;
-  name: string;
+type ApiDevice = {
+  _id: string;
+  category: string;
   brand: string;
-  os: string;
-  storage: string;
-  color: string;
-  imei: string;
-  status: DeviceStatus;
-  registeredDate: string;
-  iconBg: string;
-  accentColor: string;
+  model: string;
+  status: string;
+  condition?: string;
+  color?: string;
+  storage?: string;
+  operatingSystem?: string;
+  purchaseDate?: string;
+  photos?: { url: string; type: string }[];
+  identifiers?: { imei1?: string; imei2?: string };
+  registeredAt: string;
+  updatedAt: string;
+  registrationStep: number;
 };
 
-const DEVICES: Device[] = [
-  {
-    id: "1",
-    name: "Samsung Galaxy A54",
-    brand: "Samsung",
-    os: "Android",
-    storage: "128GB",
-    color: "Black",
-    imei: "35827*******",
-    status: "active",
-    registeredDate: "Jan 12, 2025",
-    iconBg: "#F5F7FA",
-    accentColor: "#1A56FF",
-  },
-  {
-    id: "2",
-    name: "iPhone 13 Pro",
-    brand: "Apple",
-    os: "iOS",
-    storage: "256GB",
-    color: "Sierra Blue",
-    imei: "35291*******",
-    status: "transferred",
-    registeredDate: "Feb 3, 2025",
-    iconBg: "#F5F7FA",
-    accentColor: "#64748B",
-  },
-  {
-    id: "3",
-    name: "Tecno Camon 20",
-    brand: "Tecno",
-    os: "Android",
-    storage: "128GB",
-    color: "Dark Shade",
-    imei: "86712*******",
-    status: "active",
-    registeredDate: "Mar 20, 2025",
-    iconBg: "#F0FDF4",
-    accentColor: "#16A34A",
-  },
-];
-
-type Filter = "all" | "active" | "transferred" | "stolen";
+type Filter = "all" | "pending" | "active" | "transferred" | "stolen";
 
 const FILTERS: { key: Filter; label: string; color: string }[] = [
   { key: "all", label: "All Devices", color: "#1A56FF" },
+  { key: "pending", label: "Pending", color: "#F59E0B" },
   { key: "active", label: "Active", color: "#16A34A" },
   { key: "transferred", label: "Transferred", color: "#64748B" },
   { key: "stolen", label: "Stolen", color: "#DC2626" },
 ];
 
-const STATUS_CONFIG: Record<DeviceStatus, { label: string; bg: string; text: string }> = {
+const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
+  pending: { label: "Pending", bg: "#FEF3C7", text: "#D97706" },
   active: { label: "Active", bg: "#DCFCE7", text: "#16A34A" },
   transferred: { label: "Transferred", bg: "#F1F5F9", text: "#64748B" },
   stolen: { label: "Stolen", bg: "#FEF2F2", text: "#DC2626" },
+};
+
+const STEP_LABELS: Record<number, string> = {
+  2: "Category & IMEI",
+  3: "Device Details",
+  4: "Review & Pay",
 };
 
 function DeviceIcon({ accent }: { accent: string }) {
@@ -164,11 +138,21 @@ function AlertShieldIconSm({ color = "#DC2626" }: { color?: string }) {
   );
 }
 
+function PendingIcon({ color = "#D97706" }: { color?: string }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+      <Circle cx="7" cy="7" r="5.5" stroke={color} strokeWidth="1.3" fill="none" />
+      <Path d="M7 4V7L9 9" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 type FilterPillIconProps = { filter: Filter; active: boolean };
 
 function FilterPillIcon({ filter, active }: FilterPillIconProps) {
   const c = active ? "white" : "#94A3B8";
   if (filter === "all") return <GridIcon size={14} color={c} />;
+  if (filter === "pending") return <PendingIcon color={c} />;
   if (filter === "active") return <CheckIcon color={c} />;
   if (filter === "transferred") return <TransferIconSm color={c} />;
   return <AlertShieldIconSm color={c} />;
@@ -216,18 +200,15 @@ function FilterRow({
   );
 }
 
-function DeviceCard({ device }: { device: Device }) {
-  const statusCfg = STATUS_CONFIG[device.status];
-  const isTransferred = device.status === "transferred";
-  const footActionColor = isTransferred ? "#64748B" : "#1A56FF";
-  const footActionLabel = isTransferred ? "Transfer Record" : "View Certificate";
-  const FootIcon = isTransferred ? TransferIconSm : ShieldIconSm;
+function PendingCard({ device, onContinue }: { device: ApiDevice; onContinue: () => void }) {
+  const stepLabel = STEP_LABELS[device.registrationStep] || "Unknown";
+  const statusCfg = STATUS_CONFIG.pending;
 
   return (
-    <Pressable style={[s.deviceCard, isTransferred && s.deviceCardDim]} onPress={() => router.push(`/device/${device.id}` as any)}>
+    <View style={[s.deviceCard, { borderWidth: 1, borderColor: "#FEF3C7" }]}>
       <View style={s.dLeft}>
-        <View style={[s.dIconBox, { backgroundColor: device.iconBg }]}>
-          <DeviceIcon accent={device.accentColor} />
+        <View style={[s.dIconBox, { backgroundColor: "#FFFBEB" }]}>
+          <DeviceIcon accent="#D97706" />
         </View>
         <View style={s.dBrandPill}>
           <Text style={s.dBrandPillText}>{device.brand}</Text>
@@ -236,7 +217,56 @@ function DeviceCard({ device }: { device: Device }) {
 
       <View style={s.dBody}>
         <View style={s.dHead}>
-          <Text style={s.dName} numberOfLines={1}>{device.name}</Text>
+          <Text style={s.dName} numberOfLines={1}>{device.brand} {device.model}</Text>
+          <View style={[s.dStatus, { backgroundColor: statusCfg.bg }]}>
+            <View style={[s.statusDot, { backgroundColor: statusCfg.text }]} />
+            <Text style={[s.dStatusText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
+          </View>
+        </View>
+
+        <View style={s.pendingStep}>
+          <PendingIcon color="#D97706" />
+          <Text style={s.pendingStepText}>Stopped at {stepLabel}</Text>
+        </View>
+
+        {device.identifiers?.imei1 && (
+          <View style={s.dImei}>
+            <ImeiIcon />
+            <Text style={s.dImeiText}>IMEI: {device.identifiers.imei1}</Text>
+          </View>
+        )}
+
+        <View style={s.dDivider} />
+
+        <Pressable style={s.continueBtn} onPress={onContinue}>
+          <Text style={s.continueBtnText}>Continue Registration</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function DeviceCard({ device }: { device: ApiDevice }) {
+  const statusCfg = STATUS_CONFIG[device.status] || STATUS_CONFIG.active;
+  const isTransferred = device.status === "transferred";
+  const footActionColor = isTransferred ? "#64748B" : "#1A56FF";
+  const footActionLabel = isTransferred ? "Transfer Record" : "View Certificate";
+  const FootIcon = isTransferred ? TransferIconSm : ShieldIconSm;
+
+  return (
+    <Pressable style={[s.deviceCard, isTransferred && s.deviceCardDim]} onPress={() => router.push(`/device/${device._id}` as any)}>
+      <View style={s.dLeft}>
+        <View style={[s.dIconBox, { backgroundColor: "#F5F7FA" }]}>
+          <DeviceIcon accent={device.status === "active" ? "#16A34A" : device.status === "stolen" ? "#DC2626" : "#64748B"} />
+        </View>
+        <View style={s.dBrandPill}>
+          <Text style={s.dBrandPillText}>{device.brand}</Text>
+        </View>
+      </View>
+
+      <View style={s.dBody}>
+        <View style={s.dHead}>
+          <Text style={s.dName} numberOfLines={1}>{device.brand} {device.model}</Text>
           <View style={[s.dStatus, { backgroundColor: statusCfg.bg }]}>
             <View style={[s.statusDot, { backgroundColor: statusCfg.text }]} />
             <Text style={[s.dStatusText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
@@ -245,23 +275,24 @@ function DeviceCard({ device }: { device: Device }) {
 
         <View style={s.dModel}>
           <ModelIcon />
-          <Text style={s.dModelText}>{device.os} &middot; {device.storage} &middot; {device.color}</Text>
+          <Text style={s.dModelText}>
+            {device.operatingSystem || "OS"} &middot; {device.storage || "—"} &middot; {device.color || "—"}
+          </Text>
         </View>
 
-        <View style={s.dImei}>
-          <ImeiIcon />
-          <Text style={s.dImeiText}>IMEI: {device.imei}</Text>
-          <Pressable hitSlop={6}>
-            <CopyIcon size={14} color="#1A56FF" />
-          </Pressable>
-        </View>
+        {device.identifiers?.imei1 && (
+          <View style={s.dImei}>
+            <ImeiIcon />
+            <Text style={s.dImeiText}>IMEI: {device.identifiers.imei1}</Text>
+          </View>
+        )}
 
         <View style={s.dDivider} />
 
         <View style={s.dFoot}>
           <View style={s.dFootLeft}>
             <CalendarIconSm />
-            <Text style={s.dFootLeftText}>Registered {device.registeredDate}</Text>
+            <Text style={s.dFootLeftText}>Registered {new Date(device.registeredAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</Text>
           </View>
           <Pressable style={s.dFootRight}>
             <FootIcon color={footActionColor} />
@@ -277,32 +308,60 @@ function DeviceCard({ device }: { device: Device }) {
 
 export default function DevicesScreen() {
   const insets = useSafeAreaInsets();
+  const { token } = useAuth();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [devices, setDevices] = useState<ApiDevice[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDevices = useCallback(async () => {
+    try {
+      const status = filter === "all" ? "all" : filter;
+      const res = await axios.get(`${API_BASE_URL}/device`, {
+        params: { status },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDevices(res.data.devices || []);
+    } catch {
+      setDevices([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [filter, token]);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchDevices();
+  }, [fetchDevices]);
 
   const stats = useMemo(() => {
-    const total = DEVICES.length;
-    const active = DEVICES.filter((d) => d.status === "active").length;
-    const transferred = DEVICES.filter((d) => d.status === "transferred").length;
-    return { total, active, transferred };
-  }, []);
+    const total = devices.length;
+    const pending = devices.filter((d) => d.status === "pending").length;
+    const active = devices.filter((d) => d.status === "active").length;
+    const transferred = devices.filter((d) => d.status === "transferred").length;
+    return { total, pending, active, transferred };
+  }, [devices]);
 
   const filtered = useMemo(() => {
-    let list = DEVICES;
+    let list = devices;
     if (filter !== "all") list = list.filter((d) => d.status === filter);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter(
         (d) =>
-          d.name.toLowerCase().includes(q) ||
           d.brand.toLowerCase().includes(q) ||
-          d.imei.toLowerCase().includes(q),
+          d.model.toLowerCase().includes(q) ||
+          (d.identifiers?.imei1 || "").toLowerCase().includes(q),
       );
     }
     return list;
-  }, [filter, search]);
+  }, [filter, search, devices]);
 
-  const showEmpty = filtered.length === 0;
+  const handleContinueRegistration = useCallback((deviceId: string) => {
+    router.push(`/(user)/register-device/continue?deviceId=${deviceId}` as any);
+  }, []);
+
+  const showEmpty = !loading && filtered.length === 0;
 
   return (
     <View style={s.screen}>
@@ -334,7 +393,7 @@ export default function DevicesScreen() {
               style={s.searchInput}
               value={search}
               onChangeText={setSearch}
-              placeholder="Search by name, IMEI or brand\u2026"
+              placeholder="Search by brand, model or IMEI\u2026"
               placeholderTextColor="#CBD5E1"
               autoCapitalize="none"
               autoCorrect={false}
@@ -353,17 +412,17 @@ export default function DevicesScreen() {
             </View>
           </View>
           <View style={s.statCard}>
+            <View style={[s.statBar, { backgroundColor: "#F59E0B" }]} />
+            <View>
+              <Text style={[s.statNum, { color: "#F59E0B" }]}>{stats.pending}</Text>
+              <Text style={s.statLbl}>Pending</Text>
+            </View>
+          </View>
+          <View style={s.statCard}>
             <View style={[s.statBar, { backgroundColor: "#16A34A" }]} />
             <View>
               <Text style={[s.statNum, { color: "#16A34A" }]}>{stats.active}</Text>
               <Text style={s.statLbl}>Active</Text>
-            </View>
-          </View>
-          <View style={s.statCard}>
-            <View style={[s.statBar, { backgroundColor: "#F59E0B" }]} />
-            <View>
-              <Text style={[s.statNum, { color: "#F59E0B" }]}>{stats.transferred}</Text>
-              <Text style={s.statLbl}>Transferred</Text>
             </View>
           </View>
         </View>
@@ -374,18 +433,20 @@ export default function DevicesScreen() {
           <Text style={s.listCount}>
             Showing {filtered.length} device{filtered.length !== 1 ? "s" : ""}
           </Text>
-          <Pressable style={s.listSort}>
-            <SortArrowsIcon size={16} color="#1A56FF" />
-            <Text style={s.listSortText}>Sort</Text>
-          </Pressable>
         </View>
 
-        {showEmpty ? (
+        {loading ? (
+          <ActivityIndicator size="large" color="#1A56FF" style={{ marginTop: 60 }} />
+        ) : showEmpty ? (
           <View style={s.emptyState}>
             <EmptyStateIllustration />
-            <Text style={s.emptyTitle}>No devices yet</Text>
+            <Text style={s.emptyTitle}>
+              {filter === "pending" ? "No pending registrations" : "No devices yet"}
+            </Text>
             <Text style={s.emptySub}>
-              Register your first device to start protecting your ownership
+              {filter === "pending"
+                ? "Devices you start registering will appear here"
+                : "Register your first device to start protecting your ownership"}
             </Text>
             <Pressable style={s.emptyBtn} onPress={() => router.push("/(user)/register-device/step1" as any)}>
               <PlusIcon size={20} color="white" />
@@ -394,9 +455,17 @@ export default function DevicesScreen() {
           </View>
         ) : (
           <View style={s.devicesList}>
-            {filtered.map((device) => (
-              <DeviceCard key={device.id} device={device} />
-            ))}
+            {filtered.map((device) =>
+              device.status === "pending" ? (
+                <PendingCard
+                  key={device._id}
+                  device={device}
+                  onContinue={() => handleContinueRegistration(device._id)}
+                />
+              ) : (
+                <DeviceCard key={device._id} device={device} />
+              ),
+            )}
           </View>
         )}
 
@@ -478,10 +547,8 @@ const s = StyleSheet.create({
     alignItems: "center", paddingHorizontal: 20, marginTop: 16, marginBottom: 12,
   },
   listCount: { fontSize: 13, color: "#94A3B8" },
-  listSort: { flexDirection: "row", alignItems: "center", gap: 4 },
-  listSortText: { fontSize: 13, fontWeight: "600", color: "#1A56FF" },
 
-  devicesList: { paddingHorizontal: 20 },
+  devicesList: { paddingHorizontal: 20, gap: 12 },
 
   deviceCard: {
     backgroundColor: "white", borderRadius: 20, padding: 16,
@@ -509,6 +576,8 @@ const s = StyleSheet.create({
   dStatusText: { fontSize: 11, fontWeight: "600" },
   dModel: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
   dModelText: { fontSize: 13, color: "#94A3B8" },
+  pendingStep: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
+  pendingStepText: { fontSize: 12, color: "#D97706", fontWeight: "500" },
   dImei: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
   dImeiText: { fontSize: 12, color: "#94A3B8" },
   dDivider: { height: 1, backgroundColor: "#F1F5F9", marginVertical: 12 },
@@ -517,6 +586,18 @@ const s = StyleSheet.create({
   dFootLeftText: { fontSize: 11, color: "#94A3B8" },
   dFootRight: { flexDirection: "row", alignItems: "center", gap: 4 },
   dFootRightText: { fontSize: 11, fontWeight: "600" },
+  continueBtn: {
+    backgroundColor: "#F59E0B",
+    borderRadius: 10,
+    height: 42,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  continueBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "white",
+  },
 
   emptyState: { alignItems: "center", paddingHorizontal: 20, paddingTop: 60 },
   emptyTitle: { fontSize: 20, fontWeight: "700", color: "#0D0D0D", marginTop: 24 },

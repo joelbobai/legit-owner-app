@@ -1,5 +1,10 @@
+import axios from "axios";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
 import { useCallback, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Dimensions,
   Pressable,
   ScrollView,
@@ -8,48 +13,50 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { router } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle, Defs, Path, Pattern, Rect } from "react-native-svg";
 
 import { AppBar, StepBadge } from "@/components/AppBar";
-import ProgressHeader from "@/components/register-device/ProgressHeader";
-import FloatingInput from "@/components/register-device/FloatingInput";
-import DropdownField from "@/components/register-device/DropdownField";
 import ConditionSelector from "@/components/register-device/ConditionSelector";
 import DatePickerField from "@/components/register-device/DatePickerField";
+import DropdownField from "@/components/register-device/DropdownField";
+import FloatingInput from "@/components/register-device/FloatingInput";
+import PhotoUploadCard, {
+  PHOTO_LABELS,
+} from "@/components/register-device/PhotoUploadCard";
+import ProgressHeader from "@/components/register-device/ProgressHeader";
 import TextAreaField from "@/components/register-device/TextAreaField";
-import PhotoUploadCard from "@/components/register-device/PhotoUploadCard";
-import AutoFilledNotice from "@/components/register-device/AutoFilledNotice";
-import { STORAGE_OPTIONS, COLOR_OPTIONS } from "@/data/deviceFormOptions";
+import { useAuth } from "@/context/AuthContext";
 import { useDeviceRegistration } from "@/context/DeviceRegistrationContext";
+import { COLOR_OPTIONS, STORAGE_OPTIONS } from "@/data/deviceFormOptions";
+import { API_BASE_URL } from "@/constants/api";
 
 const { width: SW } = Dimensions.get("window");
 
 export default function Step3DetailsScreen() {
   const insets = useSafeAreaInsets();
   const { data, updateDetails } = useDeviceRegistration();
-  const [photos, setPhotos] = useState<(string | null)[]>([null, null, null]);
+  const { token } = useAuth();
+  const [saving, setSaving] = useState(false);
+  const [photos, setPhotos] = useState<(string | null)[]>(
+    Array.from({ length: PHOTO_LABELS.length }, () => null),
+  );
 
   const isReady =
     data.brand.trim().length > 0 &&
     data.model.trim().length > 0 &&
-    data.condition.length > 0;
+    data.color.trim().length > 0 &&
+    data.storage.trim().length > 0 &&
+    data.condition.length > 0 &&
+    data.purchaseDate.trim().length > 0;
 
   const handleBack = useCallback(() => {
     router.back();
   }, []);
 
-  const handleNext = useCallback(() => {
-    if (isReady) {
-      router.push("/(user)/register-device/step4" as any);
-    }
-  }, [isReady]);
-
-  const handleAddPhoto = useCallback((i: number) => {
+  const handleAddPhoto = useCallback((i: number, uri: string) => {
     setPhotos((p) => {
       const n = [...p];
-      n[i] = "photo";
+      n[i] = uri;
       return n;
     });
   }, []);
@@ -61,6 +68,68 @@ export default function Step3DetailsScreen() {
       return n;
     });
   }, []);
+
+  const handleNext = useCallback(async () => {
+    if (!isReady || !data.deviceId || saving) return;
+    setSaving(true);
+
+    try {
+      const uploaded: { url: string; type: string }[] = [];
+
+      for (let i = 0; i < photos.length; i++) {
+        const uri = photos[i];
+        if (!uri) continue;
+
+        const resp = await fetch(uri);
+        const blob = await resp.blob();
+        const reader = new FileReader();
+        const base64 = await new Promise<string>((resolve) => {
+          reader.onload = () =>
+            resolve((reader.result as string).split(",")[1]);
+          reader.readAsDataURL(blob);
+        });
+
+        const uploadRes = await axios.post(
+          `${API_BASE_URL}/device/upload-photo`,
+          {
+            imageData: base64,
+            mimeType: blob.type,
+            photoType: PHOTO_LABELS[i].toLowerCase(),
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+
+        uploaded.push({
+          url: uploadRes.data.url,
+          type: PHOTO_LABELS[i].toLowerCase(),
+        });
+      }
+
+      await axios.patch(
+        `${API_BASE_URL}/device/smartphone/${data.deviceId}`,
+        {
+          color: data.color,
+          storage: data.storage,
+          operatingSystem: data.os,
+          condition: data.condition,
+          purchaseDate: data.purchaseDate || undefined,
+          notes: data.notes,
+          serialNumber: data.serialNumber || undefined,
+          modelNumber: data.modelNumber || undefined,
+          photos: uploaded,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      router.push("/(user)/register-device/step4" as any);
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || e?.message || "Something went wrong";
+      Alert.alert("Error", msg);
+      router.push("/(user)/register-device/step4" as any);
+    } finally {
+      setSaving(false);
+    }
+  }, [isReady, saving, data, photos, token]);
 
   return (
     <View style={s.screen}>
@@ -111,23 +180,15 @@ export default function Step3DetailsScreen() {
         </View>
 
         <View style={s.formCard}>
-          <AutoFilledNotice />
+          <View style={s.readonlyBox}>
+            <Text style={s.readonlyLabel}>Brand</Text>
+            <Text style={s.readonlyValue}>{data.brand || "—"}</Text>
+          </View>
 
-          <FloatingInput
-            label="Brand"
-            value={data.brand}
-            onChangeText={(v) => updateDetails({ brand: v })}
-            prefill
-            placeholder="e.g. Samsung"
-          />
-
-          <FloatingInput
-            label="Model"
-            value={data.model}
-            onChangeText={(v) => updateDetails({ model: v })}
-            prefill
-            placeholder="e.g. Galaxy A54"
-          />
+          <View style={s.readonlyBox}>
+            <Text style={s.readonlyLabel}>Model</Text>
+            <Text style={s.readonlyValue}>{data.model || "—"}</Text>
+          </View>
 
           <DropdownField
             label="Color"
@@ -135,6 +196,7 @@ export default function Step3DetailsScreen() {
             options={COLOR_OPTIONS}
             onSelect={(v) => updateDetails({ color: v })}
             placeholder="Select color"
+            hideLabel
           />
 
           <DropdownField
@@ -143,6 +205,21 @@ export default function Step3DetailsScreen() {
             options={STORAGE_OPTIONS}
             onSelect={(v) => updateDetails({ storage: v })}
             placeholder="Select storage"
+            hideLabel
+          />
+
+          <FloatingInput
+            label="Model Number (Optional)"
+            value={data.modelNumber}
+            onChangeText={(v) => updateDetails({ modelNumber: v })}
+            placeholder="e.g. SM-A546B"
+          />
+
+          <FloatingInput
+            label="Serial Number (Optional)"
+            value={data.serialNumber}
+            onChangeText={(v) => updateDetails({ serialNumber: v })}
+            placeholder="e.g. R3CT1234567"
           />
 
           <ConditionSelector
@@ -180,28 +257,36 @@ export default function Step3DetailsScreen() {
         />
         <View style={s.bottomContent}>
           <Pressable
-            style={[s.nextBtn, !isReady && s.nextBtnDisabled]}
+            style={[s.nextBtn, (!isReady || saving) && s.nextBtnDisabled]}
             onPress={handleNext}
-            disabled={!isReady}
+            disabled={!isReady || saving}
           >
             <LinearGradient
               colors={
-                isReady ? ["#1A56FF", "#0A2ECC"] : ["#CBD5E1", "#CBD5E1"]
+                isReady && !saving
+                  ? ["#1A56FF", "#0A2ECC"]
+                  : ["#CBD5E1", "#CBD5E1"]
               }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={s.nextBtnGrad}
             >
-              <Text style={s.nextBtnText}>Review & Pay</Text>
-              <Svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <Path
-                  d="M4 10H16M16 10L10 4M16 10L10 16"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </Svg>
+              {saving ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <>
+                  <Text style={s.nextBtnText}>Review & Pay</Text>
+                  <Svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <Path
+                      d="M4 10H16M16 10L10 4M16 10L10 16"
+                      stroke="white"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                </>
+              )}
             </LinearGradient>
           </Pressable>
         </View>
@@ -251,6 +336,27 @@ const s = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 20,
     elevation: 4,
+  },
+
+  readonlyBox: {
+    backgroundColor: "#F0F5FF",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#1A56FF",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 4,
+  },
+  readonlyLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#1A56FF",
+    letterSpacing: 0.3,
+  },
+  readonlyValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0D0D0D",
   },
 
   photoCardWrap: {
