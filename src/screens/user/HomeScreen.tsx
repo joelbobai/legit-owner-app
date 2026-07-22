@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   Dimensions,
   Pressable,
@@ -8,6 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, Path, Pattern, Rect } from "react-native-svg";
+import axios from "axios";
 
 import { AddCircleIcon, AlertShieldIcon, ArrowRightIcon, CheckCircleIcon, EyeIcon, LocationPinIcon, ScanFrameIcon, SmartphoneIcon, TransferIcon } from "@/components/Icon";
 import { DotGrid } from "@/components/DotGrid";
@@ -16,12 +18,13 @@ import { ActivityCard } from "@/components/home/ActivityCard";
 import { HomeHeader } from "@/components/home/HomeHeader";
 import { SectionRowHeader } from "@/components/home/SectionRowHeader";
 import { useAuth } from "@/context/AuthContext";
+import { API_BASE_URL } from "@/constants/api";
 
 const { width: SW } = Dimensions.get("window");
 
 // ─── Hero card (screen-specific) ─────────────────────────────────────────────
 
-function HeroCard() {
+function HeroCard({ count }: { count: number }) {
   const W = SW - 40;
   return (
     <Pressable style={s.heroCard}>
@@ -62,7 +65,7 @@ function HeroCard() {
             </Svg>
             <Text style={s.protectedPillText}>Protected</Text>
           </View>
-          <Text style={s.heroCount}>3 Devices</Text>
+          <Text style={s.heroCount}>{count} Device{count !== 1 ? "s" : ""}</Text>
           <Text style={s.heroSub}>actively protected</Text>
           <View style={s.heroSeal}>
             <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
@@ -87,7 +90,22 @@ function HeroCard() {
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const [deviceCount, setDeviceCount] = useState(0);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await axios.get(`${API_BASE_URL}/device`, {
+          params: { status: "all" },
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setDeviceCount(res.data.devices?.length || 0);
+      } catch {
+        setDeviceCount(0);
+      }
+    })();
+  }, [token]);
 
   return (
     <View style={s.screen}>
@@ -102,7 +120,7 @@ export default function HomeScreen() {
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <HeroCard />
+        <HeroCard count={deviceCount} />
 
         <View style={s.sectionWrap}>
           <SectionRowHeader title="Quick Actions" linkText="See all" />
@@ -116,7 +134,7 @@ export default function HomeScreen() {
             <ActionCard
               iconBg="#F0FDF4"
               label="My Devices"
-              caption="View all 3 devices"
+              caption={`View all ${deviceCount} device${deviceCount !== 1 ? "s" : ""}`}
               icon={<SmartphoneIcon size={24} color="#16A34A" />}
             />
             <ActionCard
