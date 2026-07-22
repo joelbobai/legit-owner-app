@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from "react";
-import { Animated, Platform, Pressable, StyleSheet, View, Text } from "react-native";
+import { Animated, Pressable, StyleSheet, View, Text } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import Svg, { Circle, Path } from "react-native-svg";
 import { Device } from "@/types/device";
@@ -7,6 +7,10 @@ import { Device } from "@/types/device";
 type Props = {
   devices: Device[];
   selectedDeviceId?: string;
+  liveLocation?: { latitude: number; longitude: number } | null;
+  isLive?: boolean;
+  accuracy?: number | null;
+  lastSeenText?: string;
 };
 
 function CompassIcon() {
@@ -42,41 +46,16 @@ function PhoneIcon() {
 }
 
 const p = StyleSheet.create({
-  wrapper: {
-    width: 20,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  wrapper: { width: 20, height: 32, alignItems: "center", justifyContent: "center" },
   body: {
-    width: 18,
-    height: 28,
-    borderRadius: 4,
-    borderWidth: 2.2,
-    borderColor: "white",
-    alignItems: "center",
-    paddingTop: 3,
-    paddingBottom: 3,
-    justifyContent: "space-between",
+    width: 18, height: 28, borderRadius: 4, borderWidth: 2.2, borderColor: "white",
+    alignItems: "center", paddingTop: 3, paddingBottom: 3, justifyContent: "space-between",
   },
-  speaker: {
-    width: 8,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: "white",
-    opacity: 0.6,
-  },
-  screen: {
-    flex: 1,
-    width: "100%",
-  },
+  speaker: { width: 8, height: 2, borderRadius: 1, backgroundColor: "white", opacity: 0.6 },
+  screen: { flex: 1, width: "100%" },
   homeBtn: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    borderWidth: 1.5,
-    borderColor: "white",
-    opacity: 0.7,
+    width: 5, height: 5, borderRadius: 2.5,
+    borderWidth: 1.5, borderColor: "white", opacity: 0.7,
   },
 });
 
@@ -103,7 +82,7 @@ function PulseMarker({ isOnline }: { isOnline: boolean }) {
         Animated.timing(scale1, { toValue: 1, duration: 0, useNativeDriver: true }),
         Animated.timing(opacity1, { toValue: 0.6, duration: 0, useNativeDriver: true }),
       ]),
-      { iterations: -1 }
+      { iterations: -1 },
     );
     const loop2 = Animated.loop(
       Animated.sequence([
@@ -114,33 +93,19 @@ function PulseMarker({ isOnline }: { isOnline: boolean }) {
         Animated.timing(scale2, { toValue: 1, duration: 0, useNativeDriver: true }),
         Animated.timing(opacity2, { toValue: 0.4, duration: 0, useNativeDriver: true }),
       ]),
-      { iterations: -1 }
+      { iterations: -1 },
     );
     loop1.start();
     loop2.start();
-    return () => {
-      loop1.stop();
-      loop2.stop();
-    };
+    return () => { loop1.stop(); loop2.stop(); };
   }, [isOnline]);
 
   return (
     <View style={m.outer}>
       {isOnline && (
         <>
-          <Animated.View
-            style={[m.pulse, { transform: [{ scale: scale1 }], opacity: opacity1 }]}
-          />
-          <Animated.View
-            style={[
-              m.pulse,
-              {
-                transform: [{ scale: scale2 }],
-                opacity: opacity2,
-                backgroundColor: "rgba(26,86,255,0.25)",
-              },
-            ]}
-          />
+          <Animated.View style={[m.pulse, { transform: [{ scale: scale1 }], opacity: opacity1 }]} />
+          <Animated.View style={[m.pulse, { transform: [{ scale: scale2 }], opacity: opacity2, backgroundColor: "rgba(26,86,255,0.25)" }]} />
         </>
       )}
       <View style={m.pin}>
@@ -151,92 +116,83 @@ function PulseMarker({ isOnline }: { isOnline: boolean }) {
 }
 
 const m = StyleSheet.create({
-  outer: {
-    width: 56,
-    height: 60,
-    alignItems: "center",
-    justifyContent: "flex-end",
-    paddingBottom: 4,
-  },
-  pulse: {
-    position: "absolute",
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#1A56FF",
-    bottom: 22,
-  },
+  outer: { width: 56, height: 60, alignItems: "center", justifyContent: "flex-end", paddingBottom: 4 },
+  pulse: { position: "absolute", width: 24, height: 24, borderRadius: 12, backgroundColor: "#1A56FF", bottom: 22 },
   pin: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#1A56FF",
-    alignItems: "center",
-    justifyContent: "center",
-    opacity: 1,
-    zIndex: 10,
-    elevation: 10,
+    width: 44, height: 44, borderRadius: 22, backgroundColor: "#1A56FF",
+    alignItems: "center", justifyContent: "center", opacity: 1, zIndex: 10, elevation: 10,
   },
 });
 
-const LAGOS = {
-  latitude: 6.5244,
-  longitude: 3.3792,
-  latitudeDelta: 0.05,
-  longitudeDelta: 0.05,
-};
+function getDeviceCoord(device: Device, isSelected: boolean, liveLocation: Props["liveLocation"]): { latitude: number; longitude: number } | null {
+  if (isSelected && liveLocation) return liveLocation;
+  if (device.lastKnownLocation) return device.lastKnownLocation;
+  return null;
+}
 
-function TrackingMap({ devices, selectedDeviceId }: Props) {
+function TrackingMap({ devices, selectedDeviceId, liveLocation, isLive, accuracy, lastSeenText }: Props) {
   const mapRef = useRef<MapView>(null);
   const selected = devices.find((d) => d.id === selectedDeviceId);
-  const isOnline = true;
+  const selectedCoord = selected ? getDeviceCoord(selected, true, liveLocation) : null;
+
+  useEffect(() => {
+    if (selectedCoord) {
+      mapRef.current?.animateToRegion({
+        latitude: selectedCoord.latitude,
+        longitude: selectedCoord.longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      }, 500);
+    }
+  }, [selectedCoord?.latitude, selectedCoord?.longitude]);
 
   const handleCenter = () => {
-    if (selected?.lastKnownLocation) {
+    if (selectedCoord) {
       mapRef.current?.animateToRegion({
-        latitude: selected.lastKnownLocation.latitude,
-        longitude: selected.lastKnownLocation.longitude,
+        latitude: selectedCoord.latitude,
+        longitude: selectedCoord.longitude,
         latitudeDelta: 0.02,
         longitudeDelta: 0.02,
       });
     }
   };
 
+  const initialRegion = selectedCoord
+    ? { latitude: selectedCoord.latitude, longitude: selectedCoord.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 }
+    : undefined;
+
   return (
     <View style={s.container}>
       <MapView
         ref={mapRef}
         style={s.map}
-        initialRegion={LAGOS}
+        initialRegion={initialRegion}
         showsUserLocation={false}
         showsMyLocationButton={false}
         showsCompass={false}
         toolbarEnabled={false}
-        mapPadding={{ top: 0, right: 0, bottom: 0, left: 0 }}
       >
         {devices.map((device) => {
-          if (!device.lastKnownLocation) return null;
           const isSel = device.id === selectedDeviceId;
+          const coord = getDeviceCoord(device, isSel, liveLocation);
+          if (!coord) return null;
           return (
             <Marker
               key={device.id}
-              coordinate={{
-                latitude: device.lastKnownLocation.latitude,
-                longitude: device.lastKnownLocation.longitude,
-              }}
+              coordinate={{ latitude: coord.latitude, longitude: coord.longitude }}
               anchor={{ x: 0.5, y: 1 }}
               tracksViewChanges={!isSel}
             >
-              <PulseMarker isOnline={isSel && isOnline} />
+              <PulseMarker isOnline={isSel && (isLive || device.status === "active")} />
             </Marker>
           );
         })}
       </MapView>
 
       <View style={s.liveBubble} pointerEvents="none">
-        <View style={s.liveDot} />
+        <View style={[s.liveDot, { backgroundColor: isLive ? "#4ADE80" : "#94A3B8" }]} />
         <Text style={s.liveText}>
-          {isOnline ? "Live · Abuja, Nigeria" : "Last seen 2 hrs ago · Abuja"}
+          {isLive ? "Live" : lastSeenText || "No data"}
         </Text>
       </View>
 
@@ -249,9 +205,11 @@ function TrackingMap({ devices, selectedDeviceId }: Props) {
         </Pressable>
       </View>
 
-      <View style={s.accuracyBadge} pointerEvents="none">
-        <Text style={s.accuracyText}>Accuracy: ±50m</Text>
-      </View>
+      {accuracy != null && (
+        <View style={s.accuracyBadge} pointerEvents="none">
+          <Text style={s.accuracyText}>Accuracy: ±{Math.round(accuracy)}m</Text>
+        </View>
+      )}
 
       <View style={s.mapBottomFade} pointerEvents="none" />
     </View>
@@ -259,83 +217,36 @@ function TrackingMap({ devices, selectedDeviceId }: Props) {
 }
 
 const s = StyleSheet.create({
-  container: {
-    flex: 1,
-    borderRadius: 20,
-    overflow: "hidden",
-  },
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
+  container: { flex: 1, borderRadius: 20, overflow: "hidden" },
+  map: { ...StyleSheet.absoluteFillObject },
   liveBubble: {
-    position: "absolute",
-    top: 14,
-    left: "50%",
-    transform: [{ translateX: -75 }],
-    backgroundColor: "#0D0D0D",
-    borderRadius: 100,
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
+    position: "absolute", top: 14, left: "50%",
+    transform: [{ translateX: -65 }],
+    backgroundColor: "#0D0D0D", borderRadius: 100,
+    paddingVertical: 5, paddingHorizontal: 12,
+    flexDirection: "row", alignItems: "center", gap: 5,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25, shadowRadius: 12, elevation: 6,
   },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#4ADE80",
-  },
-  liveText: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "white",
-  },
-  controls: {
-    position: "absolute",
-    top: 14,
-    right: 14,
-    gap: 8,
-  },
+  liveDot: { width: 6, height: 6, borderRadius: 3 },
+  liveText: { fontSize: 10, fontWeight: "600", color: "white" },
+  controls: { position: "absolute", top: 14, right: 14, gap: 8 },
   controlBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 36, height: 36, borderRadius: 10,
     backgroundColor: "rgba(26,86,255,0.85)",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#1A56FF",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 4,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#1A56FF", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 4,
   },
   accuracyBadge: {
-    position: "absolute",
-    bottom: 14,
-    left: 14,
+    position: "absolute", bottom: 14, left: 14,
     backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: 100,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
+    borderRadius: 100, paddingVertical: 4, paddingHorizontal: 10,
   },
-  accuracyText: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#64748B",
-  },
+  accuracyText: { fontSize: 10, fontWeight: "600", color: "#64748B" },
   mapBottomFade: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 60,
-    backgroundColor: "transparent",
+    position: "absolute", bottom: 0, left: 0, right: 0,
+    height: 60, backgroundColor: "transparent",
   },
 });
 
