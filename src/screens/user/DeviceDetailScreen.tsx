@@ -1,6 +1,14 @@
+import axios from "axios";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, Pattern, Rect } from "react-native-svg";
 
@@ -18,22 +26,120 @@ import {
   ShieldWarning,
 } from "@/components/device/DeviceIcons";
 import DeviceInfoCard from "@/components/device/DeviceInfoCard";
+import DevicePhotoGallery from "@/components/device/DevicePhotoGallery";
 import QrCertificateCard from "@/components/device/QrCertificateCard";
 import Toast from "@/components/device/Toast";
 import { ArrowRightIcon } from "@/components/Icon";
-import { DEVICES, STATUS_CONFIG } from "@/data/devices";
+import { API_BASE_URL } from "@/constants/api";
+import { useAuth } from "@/context/AuthContext";
+import { STATUS_CONFIG } from "@/data/devices";
+import { Device, DeviceStatus } from "@/types/device";
+
+type ApiDevice = {
+  _id: string;
+  category: string;
+  brand: string;
+  model: string;
+  status: string;
+  condition?: string;
+  color?: string;
+  storage?: string;
+  operatingSystem?: string;
+  purchaseDate?: string;
+  notes?: string;
+  photos?: { url: string; type: string }[];
+  identifiers?: { imei1?: string; imei2?: string; serialNumber?: string; deviceId?: string };
+  currentOwner?: { _id: string; fullName: string };
+  createdAt: string;
+  updatedAt: string;
+  qrCode?: string;
+  certificateNumber?: string;
+};
+
+function mapApiToDevice(apiDevice: ApiDevice, ownerName: string): Device {
+  const date = new Date(apiDevice.createdAt);
+  const registeredDate = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const purchaseDate = apiDevice.purchaseDate
+    ? new Date(apiDevice.purchaseDate).toLocaleDateString("en-US", {
+        month: "short",
+        year: "numeric",
+      })
+    : "—";
+
+  const statusMap: Record<string, DeviceStatus> = {
+    pending: "pending",
+    active: "active",
+    transferred: "transferred",
+    stolen: "stolen",
+  };
+
+  return {
+    id: apiDevice._id,
+    name: `${apiDevice.brand} ${apiDevice.model}`,
+    brand: apiDevice.brand,
+    category: apiDevice.category.charAt(0).toUpperCase() + apiDevice.category.slice(1),
+    os: apiDevice.operatingSystem || "—",
+    storage: apiDevice.storage || "—",
+    color: apiDevice.color || "—",
+    imei: apiDevice.identifiers?.imei1 || "—",
+    imei2: apiDevice.identifiers?.imei2 || undefined,
+    modelNumber: apiDevice.identifiers?.deviceId || undefined,
+    serialNumber: apiDevice.identifiers?.serialNumber || "—",
+    notes: apiDevice.notes || undefined,
+    photos: apiDevice.photos || undefined,
+    status: statusMap[apiDevice.status] || "active",
+    registeredDate,
+    purchaseDate,
+    condition: apiDevice.condition
+      ? apiDevice.condition.replace("used_", "Used — ").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+      : "—",
+    ownerName: apiDevice.currentOwner?.fullName || ownerName,
+    iconBg: "#F5F7FA",
+    accentColor: "#1A56FF",
+  };
+}
 
 export default function DeviceDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { token, user } = useAuth();
+
+  const [apiDevice, setApiDevice] = useState<ApiDevice | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const [toastMsg, setToastMsg] = useState("");
   const [toastVisible, setToastVisible] = useState(false);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    if (!id || !token) return;
+    (async () => {
+      try {
+        const res = await axios.get(
+          `${API_BASE_URL}/device/smartphone/${id}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        setApiDevice(res.data.device);
+      } catch {
+        setError("Failed to load device details");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [id, token]);
+
+  const ownerName = user?.fullName || "Verified Owner";
+
+  const device = useMemo(
+    () => (apiDevice ? mapApiToDevice(apiDevice, ownerName) : null),
+    [apiDevice, ownerName],
   );
 
-  const device = useMemo(() => DEVICES.find((d) => d.id === id), [id]);
   const statusConfig = device
     ? STATUS_CONFIG[device.status]
     : STATUS_CONFIG.active;
@@ -68,8 +174,7 @@ export default function DeviceDetailScreen() {
   );
   const handleTransfer = useCallback(() => {
     router.push("/(user)/transfer-seller" as any);
-    // showToast("Transfer ownership feature coming soon")
-  }, [showToast]);
+  }, []);
   const handleEdit = useCallback(
     () => showToast("Edit device feature coming soon"),
     [showToast],
@@ -79,11 +184,22 @@ export default function DeviceDetailScreen() {
     [showToast],
   );
 
-  if (!device) {
+  if (loading) {
     return (
       <View style={[s.screen, { paddingTop: insets.top }]}>
         <View style={s.notFound}>
-          <Text style={s.notFoundText}>Device not found</Text>
+          <ActivityIndicator size="large" color="#1A56FF" />
+          <Text style={s.notFoundText}>Loading device...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (error || !device) {
+    return (
+      <View style={[s.screen, { paddingTop: insets.top }]}>
+        <View style={s.notFound}>
+          <Text style={s.notFoundText}>{error || "Device not found"}</Text>
           <Pressable style={s.backBtn} onPress={handleBack}>
             <ArrowRightIcon size={20} color="white" />
             <Text style={s.backBtnText}>Go back</Text>
@@ -146,6 +262,12 @@ export default function DeviceDetailScreen() {
           <View style={s.sectionGap}>
             <DeviceInfoCard device={device} onCopyImei={handleCopyImei} />
           </View>
+
+          {device.photos && device.photos.length > 0 ? (
+            <View style={s.sectionGap}>
+              <DevicePhotoGallery photos={device.photos} />
+            </View>
+          ) : null}
 
           <View style={s.sectionGap}>
             <Text style={s.sectionLabel}>QUICK ACTIONS</Text>

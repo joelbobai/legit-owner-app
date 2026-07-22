@@ -12,6 +12,7 @@ import { FontFamily } from "@/constants/typography";
 export type PaymentMethod = {
   id: string;
   label: string;
+  disabled?: boolean;
   icon: (active: boolean) => React.ReactNode;
 };
 
@@ -60,6 +61,9 @@ function PaymentMethodCard({ method, selected, onSelect }: Props) {
             </Svg>
           </Animated.View>
         )}
+        {method.disabled && !selected && (
+          <Text style={s.comingSoon}>Soon</Text>
+        )}
       </Animated.View>
     </Pressable>
   );
@@ -93,6 +97,14 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.25)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  comingSoon: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#94A3B8",
+    fontFamily: FontFamily.bold,
+    letterSpacing: 0.3,
+    marginLeft: 2,
   },
 });
 

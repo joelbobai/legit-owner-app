@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, Pattern, Rect } from "react-native-svg";
 
 import { AppBar, StepBadge } from "@/components/AppBar";
+import PaystackWebView from "@/components/payment/PaystackWebView";
 import BottomCTA from "@/components/register-device/BottomCTA";
 import DeviceSummaryCard from "@/components/register-device/DeviceSummaryCard";
 import FeeCard from "@/components/register-device/FeeCard";
@@ -45,6 +47,10 @@ export default function Step4ConfirmScreen() {
   const [agreed, setAgreed] = useState(false);
   const [paying, setPaying] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  const [paystackVisible, setPaystackVisible] = useState(false);
+  const [paystackAuthUrl, setPaystackAuthUrl] = useState("");
+  const [paystackCallbackUrl, setPaystackCallbackUrl] = useState("");
 
   const total = BASE_FEE - promoDiscount;
   const isReady = paymentMethod !== null && agreed;
@@ -128,14 +134,66 @@ export default function Step4ConfirmScreen() {
     setAgreed((a) => !a);
   }, []);
 
-  const handlePay = useCallback(() => {
-    if (!isReady) return;
-    setPaying(true);
-    setTimeout(() => {
+  const handlePaystackSuccess = useCallback(
+    async (reference: string) => {
+      setPaystackVisible(false);
+      setPaying(true);
+      try {
+        await axios.post(
+          `${API_BASE_URL}/payment/paystack/verify`,
+          { reference },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        setPaying(false);
+        setSuccess(true);
+      } catch {
+        setPaying(false);
+        Alert.alert("Payment Error", "We couldn't verify your payment. Please contact support.");
+      }
+    },
+    [token],
+  );
+
+  const handlePaystackCancel = useCallback(() => {
+    setPaystackVisible(false);
+    setPaying(false);
+  }, []);
+
+  const handlePaystackError = useCallback(
+    (message: string) => {
+      setPaystackVisible(false);
       setPaying(false);
-      setSuccess(true);
-    }, 2000);
-  }, [isReady]);
+      Alert.alert("Payment Error", message);
+    },
+    [],
+  );
+
+  const handlePay = useCallback(async () => {
+    if (!isReady || !data.deviceId || !token) return;
+    setPaying(true);
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}/payment/paystack/initialize`,
+        { deviceId: data.deviceId, amount: total },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      const { authorizationUrl } = res.data;
+
+      const callbackUrl = `${API_BASE_URL}/payment/callback?deviceId=${data.deviceId}`;
+
+      setPaystackAuthUrl(authorizationUrl);
+      setPaystackCallbackUrl(callbackUrl);
+      setPaying(false);
+      setPaystackVisible(true);
+    } catch (e: any) {
+      setPaying(false);
+      Alert.alert(
+        "Error",
+        e?.response?.data?.message || "Failed to initialize payment. Please try again.",
+      );
+    }
+  }, [isReady, data.deviceId, token, total]);
 
   const handleDone = useCallback(() => {
     setSuccess(false);
@@ -251,6 +309,15 @@ export default function Step4ConfirmScreen() {
         deviceName={deviceName}
         totalPaid={total}
         onDone={handleDone}
+      />
+
+      <PaystackWebView
+        visible={paystackVisible}
+        authorizationUrl={paystackAuthUrl}
+        callbackUrl={paystackCallbackUrl}
+        onSuccess={handlePaystackSuccess}
+        onCancel={handlePaystackCancel}
+        onError={handlePaystackError}
       />
     </View>
   );

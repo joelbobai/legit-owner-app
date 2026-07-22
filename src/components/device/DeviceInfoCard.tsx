@@ -16,10 +16,8 @@ function DeviceInfoCard({ device, onCopyImei }: Props) {
       <View style={s.titleRow}>
         <Text style={s.deviceName}>{device.name}</Text>
         <Text style={s.deviceMeta}>
-          {device.os === "Android 14" || device.os === "Android 13"
-            ? "5G"
-            : "5G"}{" "}
-          · {device.os} · {device.storage}
+          {device.modelNumber ? `${device.modelNumber} · ` : ""}
+          {device.os} · {device.storage}
         </Text>
       </View>
 
@@ -31,6 +29,12 @@ function DeviceInfoCard({ device, onCopyImei }: Props) {
         <InfoRow label="Category" value={device.category} />
         <View style={s.infoDivider} />
         <InfoRow label="IMEI" value={device.imei} onCopy={onCopyImei} />
+        {device.imei2 ? (
+          <>
+            <View style={s.infoDivider} />
+            <InfoRow label="IMEI 2" value={device.imei2} onCopy={onCopyImei} />
+          </>
+        ) : null}
         <View style={s.infoDivider} />
         <InfoRow label="Serial Number" value={device.serialNumber} />
         <View style={s.infoDivider} />
@@ -44,6 +48,16 @@ function DeviceInfoCard({ device, onCopyImei }: Props) {
         <View style={s.infoDivider} />
         <InfoRow label="Condition" value={device.condition} />
       </View>
+
+      {device.notes ? (
+        <>
+          <View style={s.divider} />
+          <View style={s.notesSection}>
+            <Text style={s.notesLabel}>Notes</Text>
+            <Text style={s.notesText}>{device.notes}</Text>
+          </View>
+        </>
+      ) : null}
 
       <View style={s.ownerDivider} />
 
@@ -103,6 +117,20 @@ const s = StyleSheet.create({
     height: 1,
     backgroundColor: "#F8FAFC",
     marginVertical: 2,
+  },
+  notesSection: {
+    marginTop: 4,
+  },
+  notesLabel: {
+    fontSize: 13,
+    color: "#94A3B8",
+    marginBottom: 6,
+  },
+  notesText: {
+    fontSize: 14,
+    color: "#0D0D0D",
+    fontWeight: "500",
+    lineHeight: 22,
   },
   ownerDivider: {
     height: 1,

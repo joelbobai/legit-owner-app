@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Path, Rect, Text as SvgText } from "react-native-svg";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
@@ -13,6 +13,7 @@ const PAYMENT_METHODS: PaymentMethod[] = [
   {
     id: "bank",
     label: "Bank Transfer",
+    disabled: true,
     icon: (active) => (
       <Svg width="22" height="22" viewBox="0 0 22 22" fill="none">
         <Path
@@ -60,6 +61,7 @@ const PAYMENT_METHODS: PaymentMethod[] = [
   {
     id: "flutterwave",
     label: "Flutterwave",
+    disabled: true,
     icon: (active) => (
       <Svg width="22" height="22" viewBox="0 0 22 22" fill="none">
         <Rect
@@ -88,6 +90,7 @@ const PAYMENT_METHODS: PaymentMethod[] = [
   {
     id: "ussd",
     label: "USSD",
+    disabled: true,
     icon: (active) => (
       <Svg width="22" height="22" viewBox="0 0 22 22" fill="none">
         <Rect
@@ -118,6 +121,7 @@ const PAYMENT_METHODS: PaymentMethod[] = [
   {
     id: "airtime",
     label: "Airtime",
+    disabled: true,
     icon: (active) => (
       <Svg width="22" height="22" viewBox="0 0 22 22" fill="none">
         <Path
@@ -151,6 +155,14 @@ type Props = {
 };
 
 function PaymentMethodSelector({ selected, onSelect }: Props) {
+  const handleSelect = (id: string) => {
+    if (id !== "paystack") {
+      Alert.alert("Coming Soon", `${PAYMENT_METHODS.find(m => m.id === id)?.label} will be available soon. Please use Paystack.`);
+      return;
+    }
+    onSelect(id);
+  };
+
   return (
     <Animated.View
       entering={FadeInDown.duration(400).delay(200)}
@@ -167,7 +179,7 @@ function PaymentMethodSelector({ selected, onSelect }: Props) {
             key={method.id}
             method={method}
             selected={selected === method.id}
-            onSelect={onSelect}
+            onSelect={handleSelect}
           />
         ))}
       </ScrollView>
