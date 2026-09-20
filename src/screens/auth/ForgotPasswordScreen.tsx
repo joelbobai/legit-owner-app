@@ -80,7 +80,7 @@ export default function ForgotPasswordScreen() {
           <EnvelopeIllustration />
           <Text style={s.title}>Forgot your password?</Text>
           <Text style={s.sub}>
-            No worries! Enter your registered phone number or email and we'll send you a reset code
+            No worries! Enter your registered phone number or email and we&apos;ll send you a reset code
           </Text>
 
           <FormCard style={s.card}>
@@ -98,7 +98,7 @@ export default function ForgotPasswordScreen() {
             />
             <View style={s.hintRow}>
               <InfoIcon size={14} color="#94A3B8" />
-              <Text style={s.hintText}>We'll send a 6-digit code to this contact</Text>
+              <Text style={s.hintText}>We&apos;ll send a 6-digit code to this contact</Text>
             </View>
           </FormCard>
         </ScrollView>

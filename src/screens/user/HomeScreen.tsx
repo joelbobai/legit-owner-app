@@ -159,7 +159,7 @@ export default function HomeScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.bannerTitle}>Verify Before You Buy</Text>
-            <Text style={s.bannerSub}>Check any device's ownership status for free</Text>
+            <Text style={s.bannerSub}>Check any device&apos;s ownership status for free</Text>
           </View>
           <View style={{ paddingRight: 16 }}>
             <ArrowRightIcon size={20} color="#1A56FF" />

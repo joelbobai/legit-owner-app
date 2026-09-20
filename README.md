@@ -2,6 +2,31 @@
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
+## SDK 57 development
+
+This project uses Expo SDK 57, React Native 0.86.3, and React 19.2.3.
+Use Node.js 22.13 or newer. Native iOS builds require Xcode 26.4 or newer
+and target iOS 16.4 or newer.
+
+Install the locked dependencies with `npm ci`. After an SDK upgrade, rebuild
+any existing development client; an SDK 54 client cannot run this project.
+Use a native development build to test the Didit integration and background
+location tracking, which cannot be fully tested in Expo Go.
+
+Run the migration checks with:
+
+```bash
+npm run typecheck
+npm run lint
+npx expo install --check
+npx expo-doctor
+npx expo export --platform ios --platform android
+```
+
+On a physical device, also verify login/session restoration, image picking,
+date selection, maps, foreground/background location permissions and tracking,
+and the payment WebView against your test backend before release.
+
 ## Get started
 
 1. Install dependencies
