@@ -1,3 +1,3 @@
-import Step2IdVerification from '@/screens/auth/register/Step2IdVerification';
+import Step1PersonalInfo from '@/screens/auth/register/Step1PersonalInfo';
 
-export default Step2IdVerification;
+export default Step1PersonalInfo;

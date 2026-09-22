@@ -15,6 +15,10 @@ export type FloatingFieldProps = {
   // When false, TextInput is non-editable (no keyboard). Use together with
   // onPress to build "tap to open picker" fields.
   editable?: boolean;
+  // Optional focus callbacks (e.g. so a parent ScrollView can scroll the
+  // field into view above the keyboard). Called after internal state updates.
+  onFocus?: () => void;
+  onBlur?: () => void;
   // When provided, an absoluteFill Pressable overlay is rendered inside
   // fieldInner so the entire field acts as a button (e.g. date/state pickers).
   // Only pass this when editable={false} — otherwise the overlay would block
@@ -34,6 +38,8 @@ export const FloatingField = memo(function FloatingField({
   secureTextEntry = false,
   style,
   editable = true,
+  onFocus,
+  onBlur,
   onPress,
 }: FloatingFieldProps) {
   // 'use no memo' — opts this component OUT of the React Compiler
@@ -55,12 +61,14 @@ export const FloatingField = memo(function FloatingField({
     // DEBUG (uncomment to verify only one field fires per tap):
     // console.log(`[FOCUS → "${label}"]`, Date.now());
     setIsFocused(true);
-  }, []);
+    onFocus?.();
+  }, [onFocus]);
 
   const handleBlur = useCallback(() => {
     // console.log(`[BLUR → "${label}"]`, Date.now());
     setIsFocused(false);
-  }, []);
+    onBlur?.();
+  }, [onBlur]);
 
   return (
     // collapsable={false} — Fabric collapses "passthrough" Views, destroying

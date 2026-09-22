@@ -27,8 +27,9 @@ import { PrivacyNote } from "@/components/PrivacyNote";
 import { ProgressBar } from "@/components/ProgressBar";
 import { SectionHeader } from "@/components/SectionHeader";
 import { API_BASE_URL, ENDPOINTS } from "@/constants/api";
+import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -185,9 +186,11 @@ function StatePickerModal({
 function PasswordField({
   value,
   onChangeText,
+  onFocus,
 }: {
   value: string;
   onChangeText: (v: string) => void;
+  onFocus?: () => void;
 }) {
   // 'use no memo' — same reason as all other components that own useState in
   // this module: prevents React Compiler cache-slot aliasing across instances.
@@ -217,6 +220,7 @@ function PasswordField({
       secureTextEntry={!show}
       autoCapitalize="none"
       renderIcon={renderLockIcon}
+      onFocus={onFocus}
       right={
         <Pressable onPress={toggleShow} hitSlop={8}>
           {show ? (
@@ -248,14 +252,46 @@ export default function Step1PersonalInfo() {
 
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { login } = useAuth();
 
   // ── Form state ──────────────────────────────────────────────────────────────
+  // Prefilled from Step 1 NIN/BVN lookup (SecureStore "registrationIdentity").
+  // Full name + DOB are locked to the verified record; phone stays editable.
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [selectedState, setSelectedState] = useState("");
   const [dob, setDob] = useState("");
   const [password, setPassword] = useState("");
+  const [identity, setIdentity] = useState<{
+    idType: string;
+    idNumber: string;
+    photoUrl?: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await SecureStore.getItemAsync("registrationIdentity");
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed?.fullName) setFullName(parsed.fullName);
+        if (parsed?.phone) setPhone(String(parsed.phone).replace(/^\+?234/, "0"));
+        if (parsed?.birthDateRaw) {
+          const m = String(parsed.birthDateRaw).match(/^(\d{2})-(\d{2})-(\d{4})$/);
+          if (m) setDob(`${m[1]} / ${m[2]} / ${m[3]}`);
+        } else if (parsed?.birthDate) {
+          const d = new Date(parsed.birthDate);
+          if (!isNaN(d.getTime())) setDob(formatDate(d));
+        }
+        if (parsed?.idType && parsed?.idNumber) {
+          setIdentity({ idType: parsed.idType, idNumber: parsed.idNumber, photoUrl: parsed.photoUrl ?? null });
+        }
+      } catch {
+        // No cached identity — user can still fill manually
+      }
+    })();
+  }, []);
 
   // ── Submit state ─────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(false);
@@ -273,8 +309,9 @@ export default function Step1PersonalInfo() {
       stateOfResidence: selectedState,
       dateOfBirth: formattedDob,
       password,
+      ...(identity ? { idType: identity.idType, idNumber: identity.idNumber, profilePhoto: identity.photoUrl || undefined } : {}),
     };
-  }, [fullName, phone, email, selectedState, dob, password]);
+  }, [fullName, phone, email, selectedState, dob, password, identity]);
 
   const validate = useCallback(() => {
     if (!fullName.trim()) return "Full name is required";
@@ -300,23 +337,58 @@ export default function Step1PersonalInfo() {
     setLoading(true);
     setError("");
 
+    // AuthContext login persists token + user under the keys the (user)
+    // layout guard reads AND updates in-memory state — raw SecureStore writes
+    // alone would leave the app thinking nobody is logged in.
+    const saveSessionAndGo = async (token: string, user: any) => {
+      await login(token, user);
+      // This screen now lives at route step2 (details second), so Next goes to step3
+      router.push("/(auth)/register/step3" as any);
+    };
+
     try {
       const body = buildRequestBody();
       const response = await axios.post(
         `${API_BASE_URL}${ENDPOINTS.REGISTER_STEP1}`,
         body,
-        { timeout: 30000 },
+        // Cold server + DB + hash can take a while on first request
+        { timeout: 60000 },
       );
 
       const { token, user } = response.data;
-
-      await SecureStore.setItemAsync("authToken", token);
-      if (user) {
-        await SecureStore.setItemAsync("registrationUser", JSON.stringify(user));
-      }
-
-      router.push("/(auth)/register/step2" as any);
+      await saveSessionAndGo(token, user);
     } catch (err: unknown) {
+      // Recovery: the account may already exist because a previous tap
+      // succeeded on the server but its response never reached us
+      // (killed connection / dropped response). Log in with the same
+      // credentials and continue instead of dead-ending.
+      const serverMessage =
+        axios.isAxiosError(err) && err.response
+          ? String(err.response.data?.message || "")
+          : "";
+      if (/already exists/i.test(serverMessage)) {
+        try {
+          const body = buildRequestBody();
+          const loginRes = await axios.post(
+            `${API_BASE_URL}${ENDPOINTS.LOGIN}`,
+            {
+              emailOrPhone: body.email || body.phoneNumber,
+              password: body.password,
+            },
+            { timeout: 30000 },
+          );
+          await saveSessionAndGo(loginRes.data?.token, loginRes.data?.user);
+          return;
+        } catch (loginErr) {
+          setError(
+            "This phone/email is already registered. Please log in instead."
+          );
+          console.error("[Register Step1 Recovery Login Error]", {
+            message: loginErr instanceof Error ? loginErr.message : loginErr,
+          });
+          return;
+        }
+      }
       if (axios.isAxiosError(err)) {
         if (err.response) {
           setError(err.response.data?.message || "Registration failed. Please try again.");
@@ -342,7 +414,7 @@ export default function Step1PersonalInfo() {
     } finally {
       setLoading(false);
     }
-  }, [validate, buildRequestBody, router]);
+  }, [validate, buildRequestBody, router, login]);
 
   // ── Picker visibility ────────────────────────────────────────────────────────
   const [showStatePicker, setShowStatePicker] = useState(false);
@@ -462,13 +534,22 @@ export default function Step1PersonalInfo() {
 
   const cancelIosDate = useCallback(() => setShowDatePicker(false), []);
 
+  // ── Keep the focused field visible above the keyboard ─────────────────────
+  // The password field sits at the bottom of a long form — without this the
+  // keyboard covers it and the user can't see what they're typing. On focus
+  // we scroll to the end after a short delay so the layout has settled
+  // (keyboard animation + KAV resize take ~200ms).
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollPasswordIntoView = useCallback(() => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+  }, []);
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      // On iOS, 'padding' pushes the ScrollView content up when the keyboard
-      // appears so the focused field stays visible. On Android the OS handles
-      // this natively via windowSoftInputMode, so we leave it undefined.
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      // iOS 'padding' pushes content up; Android 'height' shrinks the view so
+      // the ScrollView becomes scrollable instead of being covered.
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={s.screen}>
         <DotGrid id="dotsStep1" />
@@ -477,9 +558,9 @@ export default function Step1PersonalInfo() {
         <AppBar
           title="Create Account"
           onBack={() => router.back()}
-          right={<StepBadge label="1 of 3" />}
+          right={<StepBadge label="2 of 3" />}
         />
-        <ProgressBar progress="33.33%" label="Step 1 of 3" />
+        <ProgressBar progress="66.66%" label="Step 2 of 3" />
 
         {/*
          * keyboardShouldPersistTaps="handled" — lets the user tap a different
@@ -487,6 +568,7 @@ export default function Step1PersonalInfo() {
          * dismiss the keyboard with a tap on the background.
          */}
         <ScrollView
+          ref={scrollRef}
           style={{ flex: 1 }}
           contentContainerStyle={s.content}
           keyboardShouldPersistTaps="handled"
@@ -494,20 +576,25 @@ export default function Step1PersonalInfo() {
         >
           <SectionHeader
             eyebrow="PERSONAL INFO"
-            title="Tell us about yourself"
-            subtitle="Fill in your details exactly as they appear on your ID"
+            title="Confirm your details"
+            subtitle={
+              identity
+                ? `Verified via ${identity.idType} ${identity.idNumber} — name and DOB are locked`
+                : "Fill in your details exactly as they appear on your ID"
+            }
           />
 
           <FormCard style={s.card}>
 
-            {/* ── Full Name ─────────────────────────────────────────────── */}
+            {/* ── Full Name (locked to NIN/BVN record when present) ───────── */}
             <FloatingField
-              label="Full Name"
+              label="Full Name (verified)"
               value={fullName}
               placeholder="e.g. Chukwuemeka Obi"
               onChangeText={setFullName}
               autoCapitalize="words"
               renderIcon={renderNameIcon}
+              editable={!identity}
             />
 
             {/* ── Phone Number ──────────────────────────────────────────── */}
@@ -543,24 +630,20 @@ export default function Step1PersonalInfo() {
               right={stateRightIcon}
             />
 
-            {/* ── Date of Birth ─────────────────────────────────────────────
-             *
-             * Same editable={false} + onPress pattern as State above.
-             * The value is formatted as DD / MM / YYYY to match the placeholder.
-             */}
+            {/* ── Date of Birth (locked to NIN/BVN record when present) ───── */}
             <FloatingField
-              label="Date of Birth"
+              label="Date of Birth (verified)"
               value={dob}
               placeholder="DD / MM / YYYY"
               onChangeText={() => {}}
               editable={false}
-              onPress={openDatePicker}
+              onPress={identity ? undefined : openDatePicker}
               renderIcon={renderDobIcon}
               right={dobRightIcon}
             />
 
             {/* ── Password (last field) ─────────────────────────────────── */}
-            <PasswordField value={password} onChangeText={setPassword} />
+            <PasswordField value={password} onChangeText={setPassword} onFocus={scrollPasswordIntoView} />
 
           </FormCard>
 
@@ -577,7 +660,7 @@ export default function Step1PersonalInfo() {
             label={
               loading
                 ? "Creating account..."
-                : "Next — Identity Verification"
+                : "Next — Secure Your Account"
             }
             onPress={handleNext}
             disabled={loading}

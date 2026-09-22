@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 import Svg, { Circle, Path } from "react-native-svg";
 
 function ShieldCheckIcon({ color = "#16A34A", size = 14 }: { color?: string; size?: number }) {
@@ -17,18 +18,23 @@ type Props = {
   email: string;
   idVerified: boolean;
   faceVerified: boolean;
+  photoUrl?: string | null;
 };
 
-function ProfileHeader({ name, phone, email, idVerified, faceVerified }: Props) {
+function ProfileHeader({ name, phone, email, idVerified, faceVerified, photoUrl }: Props) {
   return (
     <View style={s.wrap}>
       <View style={s.avatarWrap}>
-        <View style={s.avatar}>
-          <Svg width={44} height={44} viewBox="0 0 44 44" fill="none">
-            <Circle cx={22} cy={16} r={8} fill="white" opacity={0.9} />
-            <Path d="M10 36C10 28 15 22 22 22C29 22 34 28 34 36" fill="white" opacity={0.85} />
-          </Svg>
-        </View>
+        {photoUrl ? (
+          <Image source={{ uri: photoUrl }} style={s.avatarPhoto} contentFit="cover" />
+        ) : (
+          <View style={s.avatar}>
+            <Svg width={44} height={44} viewBox="0 0 44 44" fill="none">
+              <Circle cx={22} cy={16} r={8} fill="white" opacity={0.9} />
+              <Path d="M10 36C10 28 15 22 22 22C29 22 34 28 34 36" fill="white" opacity={0.85} />
+            </Svg>
+          </View>
+        )}
         <View style={s.cameraBadge}>
           <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
             <Path d="M12 8C9.8 8 8 9.8 8 12C8 14.2 9.8 16 12 16C14.2 16 16 14.2 16 12C16 9.8 14.2 8 12 8Z" stroke="white" strokeWidth="2" fill="none" />
@@ -80,6 +86,12 @@ const s = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 16,
     elevation: 6,
+  },
+  avatarPhoto: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: "#E2E8F0",
   },
   cameraBadge: {
     position: "absolute",

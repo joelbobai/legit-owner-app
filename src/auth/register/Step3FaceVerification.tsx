@@ -1,30 +1,13 @@
 import { router } from "expo-router";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppBar, StepBadge } from "@/components/AppBar";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { PrivacyNote } from "@/components/PrivacyNote";
 import { ProgressBar } from "@/components/ProgressBar";
-
-// Display phrase matching the platform-aware label — Android never mentions
-// "Face ID"/"iPhone", and older iPhones (6/7/8) use Touch ID, not Face ID.
-function labelPhrase(label: string): string {
-  switch (label) {
-    case "Face ID":
-      return "the Face ID you already use on this iPhone";
-    case "Touch ID":
-      return "the Touch ID you already use on this iPhone";
-    case "Face Unlock":
-      return "the face unlock you already use on this device";
-    case "Fingerprint or Face Unlock":
-      return "the screen lock you already use on this device";
-    default:
-      return "the fingerprint you already use on this device";
-  }
-}
 
 export default function Step3FaceVerification() {
   const insets = useSafeAreaInsets();
@@ -46,18 +29,12 @@ export default function Step3FaceVerification() {
         ]);
         setSupported(hasHardware);
         setEnrolled(isEnrolled);
-        const hasFace =
-          types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION);
-        const hasFinger =
-          types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT);
-        if (Platform.OS === "ios") {
-          setLabel(hasFace ? "Face ID" : hasFinger ? "Touch ID" : "Biometric");
-        } else if (hasFinger && hasFace) {
-          setLabel("Fingerprint or Face Unlock");
-        } else if (hasFinger) {
+        if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+          setLabel("Face ID");
+        } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
           setLabel("Fingerprint");
-        } else if (hasFace) {
-          setLabel("Face Unlock");
+        } else if (types.includes(LocalAuthentication.AuthenticationType.IRIS)) {
+          setLabel("Iris");
         }
       } catch {
         setSupported(false);
@@ -112,7 +89,7 @@ export default function Step3FaceVerification() {
           {checking
             ? "Checking what this phone supports…"
             : hasBiometric
-              ? `Use ${labelPhrase(label)} to protect your account.`
+              ? `Use ${label === "Face ID" ? "the Face ID you already use on this iPhone" : "the fingerprint you already use on this device"} to protect your account.`
               : "This phone has no fingerprint or Face ID set up, so we'll create your account now. You can add an App PIN anytime in Settings → Privacy."}
         </Text>
 

@@ -142,6 +142,7 @@ export default function ProfileScreen() {
           email={email}
           idVerified={user?.verificationStatus === "id_submitted" || user?.verificationStatus === "verified"}
           faceVerified={user?.faceVerified ?? false}
+          photoUrl={user?.profilePhoto ?? null}
         />
 
         <StatsCard deviceCount={3} memberSince={memberSince} />

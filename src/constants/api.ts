@@ -1,8 +1,8 @@
 import { Platform } from "react-native";
 
 const DEV_API_HOST = Platform.select({
-  android: "192.168.18.8",
-  ios: "192.168.18.8",
+  android: "192.168.18.14",
+  ios: "192.168.18.14",
   default: "localhost",
 });
 
@@ -14,6 +14,8 @@ export const ENDPOINTS = {
   VERIFY_EMAIL: "/user/register/verify-email",
   VERIFY_ID: "/user/register/verify-id",
   VERIFY_FACE: "/user/register/verify-face",
+  VERIFICATION_LOOKUP: "/verification/lookup",
+  VERIFICATION_VERIFY: "/verification/verify",
   FORGOT_PASSWORD: "/user/forgot-password",
   RESET_PASSWORD: "/user/reset-password",
   PROFILE: "/user/profile",
