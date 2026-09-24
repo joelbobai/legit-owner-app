@@ -9,21 +9,6 @@ import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Path } from "react-native-svg";
-
-function ArrowLeftIcon() {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M19 12H5M5 12L11 18M5 12L11 6"
-        stroke="#0D0D0D"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
 
 const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   {
@@ -144,13 +129,11 @@ export default function NotificationsScreen() {
     );
   }, []);
 
+  // No back button: Notifications is a tab root (alerts tab), so there is
+  // no history to go back to. Spacer keeps the title centered.
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1100);
-  }, []);
-
-  const handleBack = useCallback(() => {
-    // no-op for tab
   }, []);
 
   return (
@@ -158,9 +141,7 @@ export default function NotificationsScreen() {
       <View style={{ height: insets.top, backgroundColor: "white" }} />
 
       <View style={s.topBar}>
-        <Pressable onPress={handleBack} style={s.backBtn} hitSlop={8}>
-          <ArrowLeftIcon />
-        </Pressable>
+        <View style={s.backBtn} />
         <Text style={s.topBarTitle}>Notifications</Text>
         {counts.all > 0 ? (
           <Pressable onPress={markAllRead} style={s.markAllBtn} hitSlop={8}>

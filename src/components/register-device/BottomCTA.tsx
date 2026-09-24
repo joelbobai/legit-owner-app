@@ -20,9 +20,10 @@ type Props = {
   paying: boolean;
   disabled: boolean;
   onPress: () => void;
+  isFree?: boolean;
 };
 
-function BottomCTA({ total, paying, disabled, onPress }: Props) {
+function BottomCTA({ total, paying, disabled, onPress, isFree }: Props) {
   const animStyle = useAnimatedStyle(() => ({
     opacity: withTiming(disabled ? 0.5 : 1, { duration: 250 }),
   }));
@@ -76,7 +77,7 @@ function BottomCTA({ total, paying, disabled, onPress }: Props) {
                 />
               </Svg>
               <Text style={s.text}>
-                Complete Registration & Pay ₦{total}
+                {isFree ? "Complete Registration" : `Complete Registration & Pay ₦${total}`}
               </Text>
             </>
           )}

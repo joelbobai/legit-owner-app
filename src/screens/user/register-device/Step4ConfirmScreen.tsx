@@ -53,7 +53,9 @@ export default function Step4ConfirmScreen() {
   const [paystackCallbackUrl, setPaystackCallbackUrl] = useState("");
 
   const total = BASE_FEE - promoDiscount;
-  const isReady = paymentMethod !== null && agreed;
+  // Promo covers everything → no Paystack, no payment method needed
+  const isFree = promoApplied && total <= 0;
+  const isReady = agreed && (isFree || paymentMethod !== null);
 
   const deviceName =
     [data.brand, data.model].filter(Boolean).join(" ") || "Device";
@@ -172,6 +174,17 @@ export default function Step4ConfirmScreen() {
     if (!isReady || !data.deviceId || !token) return;
     setPaying(true);
     try {
+      // Promo covers the full fee — complete on the backend, skip Paystack
+      if (isFree) {
+        await axios.post(
+          `${API_BASE_URL}/payment/promo`,
+          { deviceId: data.deviceId, code: promoCode },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        setPaying(false);
+        setSuccess(true);
+        return;
+      }
       const res = await axios.post(
         `${API_BASE_URL}/payment/paystack/initialize`,
         { deviceId: data.deviceId, amount: total },
@@ -193,7 +206,7 @@ export default function Step4ConfirmScreen() {
         e?.response?.data?.message || "Failed to initialize payment. Please try again.",
       );
     }
-  }, [isReady, data.deviceId, token, total]);
+  }, [isReady, data.deviceId, token, total, isFree, promoCode]);
 
   const handleDone = useCallback(() => {
     setSuccess(false);
@@ -280,10 +293,18 @@ export default function Step4ConfirmScreen() {
           promoError={promoError}
         />
 
-        <PaymentMethodSelector
-          selected={paymentMethod}
-          onSelect={handleSelectPayment}
-        />
+        {isFree ? (
+          <View style={s.freeBanner}>
+            <Text style={s.freeBannerText}>
+              Promo covers the full fee — no payment needed. Just agree and complete.
+            </Text>
+          </View>
+        ) : (
+          <PaymentMethodSelector
+            selected={paymentMethod}
+            onSelect={handleSelectPayment}
+          />
+        )}
 
         <TermsAgreement agreed={agreed} onToggle={handleToggleAgreed} />
 
@@ -297,17 +318,18 @@ export default function Step4ConfirmScreen() {
           pointerEvents="none"
         />
         <BottomCTA
-          total={total}
+          total={Math.max(0, total)}
           paying={paying}
           disabled={!isReady}
           onPress={handlePay}
+          isFree={isFree}
         />
       </View>
 
       <SuccessOverlay
         visible={success}
         deviceName={deviceName}
-        totalPaid={total}
+        totalPaid={Math.max(0, total)}
         onDone={handleDone}
       />
 
@@ -349,6 +371,21 @@ const s = StyleSheet.create({
   },
 
   body: { paddingHorizontal: 20, paddingTop: 24 },
+  freeBanner: {
+    marginTop: 16,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1.5,
+    borderColor: "#BBF7D0",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  freeBannerText: {
+    fontSize: 14,
+    color: "#15803D",
+    fontWeight: "600",
+    lineHeight: 20,
+  },
   heading: {
     fontSize: 26,
     fontWeight: "700",

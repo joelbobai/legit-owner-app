@@ -151,7 +151,11 @@ function SuccessOverlay({ visible, deviceName, totalPaid, onDone }: Props) {
 
 const s = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     zIndex: 200,
     backgroundColor: "rgba(255,255,255,0.97)",
     borderRadius: 46,

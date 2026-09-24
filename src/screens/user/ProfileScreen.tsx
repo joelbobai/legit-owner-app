@@ -1,5 +1,4 @@
-import { useCallback } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 
@@ -10,14 +9,6 @@ import StatsCard from "@/components/tracking/profile/StatsCard";
 import SettingsMenuItem from "@/components/tracking/profile/SettingsMenuItem";
 import DangerZone from "@/components/tracking/profile/DangerZone";
 import { useAuth } from "@/context/AuthContext";
-
-function ArrowLeftIcon() {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-      <Path d="M19 12H5M5 12L11 18M5 12L11 6" stroke="#0D0D0D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
 
 function EditIcon() {
   return (
@@ -106,8 +97,9 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
-  const handleBack = useCallback(() => {}, []);
-
+  // No back button: Profile is a tab root, so there is no history to go
+  // back to. A dead back arrow is worse than none — spacer keeps the
+  // title centered.
   const fullName = user?.fullName ?? "User";
   const phone = user?.phoneNumber ?? "";
   const email = user?.email ?? "";
@@ -122,9 +114,7 @@ export default function ProfileScreen() {
       <View style={{ height: insets.top, backgroundColor: "white" }} />
 
       <View style={s.topBar}>
-        <Pressable onPress={handleBack} style={s.backBtn} hitSlop={8}>
-          <ArrowLeftIcon />
-        </Pressable>
+        <View style={s.backBtn} />
         <Text style={s.topBarTitle}>My Profile</Text>
         <View style={s.editBtn}>
           <EditIcon />

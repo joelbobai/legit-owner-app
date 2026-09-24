@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
@@ -42,15 +42,17 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; d
   stolen: { label: "Stolen", bg: "#FEE2E2", text: "#DC2626", dot: "#DC2626" },
 };
 
-function BellIcon() {
+function BellIcon({ onPress }: { onPress: () => void }) {
   return (
-    <View style={s.bellWrap}>
+    <Pressable onPress={onPress} hitSlop={8}>
+      <View style={s.bellWrap}>
       <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
         <Path d="M12 3C8.7 3 6 5.7 6 9V14L4 16H20L18 14V9C18 5.7 15.3 3 12 3Z" stroke="#1A56FF" strokeWidth="1.8" fill="none" />
         <Path d="M10 16C10 17.1 10.9 18 12 18C13.1 18 14 17.1 14 16" stroke="#1A56FF" strokeWidth="1.7" strokeLinecap="round" fill="none" />
       </Svg>
       <View style={s.bellDot} />
-    </View>
+      </View>
+    </Pressable>
   );
 }
 
@@ -139,7 +141,11 @@ export default function TrackScreen() {
   }, []);
 
   const handleReportStolen = useCallback(() => {
-    router.push("/report-stolen");
+    router.push("/(user)/report-stolen" as any);
+  }, []);
+
+  const handleOpenAlerts = useCallback(() => {
+    router.push("/(user)/(tabs)/alerts" as any);
   }, []);
 
   if (loading) {
@@ -176,7 +182,7 @@ export default function TrackScreen() {
         <View style={s.topBarSide} />
         <Text style={s.topBarTitle}>Track My Device</Text>
         <View style={s.topBarSide}>
-          <BellIcon />
+          <BellIcon onPress={handleOpenAlerts} />
         </View>
       </View>
 
@@ -202,6 +208,18 @@ export default function TrackScreen() {
             ))}
           </ScrollView>
         </View>
+
+        {tracker.needsPermissionPrompt ? (
+          <View style={s.permCard}>
+            <Text style={s.permTitle}>Enable location to track</Text>
+            <Text style={s.permSub}>
+              We use your GPS to show this phone live on the map and keep updating it when the app is closed. You can turn it off anytime.
+            </Text>
+            <Pressable style={s.permBtn} onPress={tracker.primeTracking}>
+              <Text style={s.permBtnText}>Enable location</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={s.mapSection}>
           <TrackingMap
@@ -292,6 +310,26 @@ const s = StyleSheet.create({
   scrollContent: { paddingBottom: 20 },
   pillsRow: { paddingTop: 14, paddingLeft: 20 },
   pillsInner: { gap: 8, paddingRight: 20 },
+  permCard: {
+    marginTop: 14,
+    marginHorizontal: 20,
+    backgroundColor: "#EEF3FF",
+    borderWidth: 1.5,
+    borderColor: "#1A56FF",
+    borderRadius: 16,
+    padding: 16,
+  },
+  permTitle: { fontSize: 15, fontWeight: "700", color: "#0D0D0D" },
+  permSub: { fontSize: 13, color: "#4A4A4A", lineHeight: 19, marginTop: 4 },
+  permBtn: {
+    marginTop: 12,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: "#1A56FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  permBtnText: { fontSize: 15, fontWeight: "600", color: "white" },
   mapSection: {
     height: MAP_H, marginTop: 14, marginHorizontal: 20, borderRadius: 20,
     overflow: "hidden",

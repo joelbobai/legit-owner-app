@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Dimensions,
+  FlatList,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +23,7 @@ import { HomeHeader } from "@/components/home/HomeHeader";
 import { SectionRowHeader } from "@/components/home/SectionRowHeader";
 import { useAuth } from "@/context/AuthContext";
 import { API_BASE_URL } from "@/constants/api";
+import { getPhoneIdentity } from "@/utils/deviceIdentity";
 
 const { width: SW } = Dimensions.get("window");
 
@@ -86,6 +91,186 @@ function HeroCard({ count }: { count: number }) {
   );
 }
 
+// ─── This-device banner ─────────────────────────────────────────────────────
+// Answers "which of my devices is this phone?" — matched by hardware ID,
+// so identical models are never confused. Unrecognized phones with existing
+// devices get a one-tap link flow (reinstall safety net).
+
+type BoundSummary = {
+  _id: string;
+  brand: string;
+  model: string;
+  status: string;
+  imeiTail?: string | null;
+};
+
+function maskTail(imei?: string) {
+  if (!imei) return null;
+  const t = String(imei).slice(-4);
+  return `····${t}`;
+}
+
+function ThisDeviceBanner({ token, deviceCount }: { token: string | null; deviceCount: number }) {
+  "use no memo";
+
+  const [current, setCurrent] = useState<BoundSummary | null>(null);
+  const [resolved, setResolved] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [devices, setDevices] = useState<any[]>([]);
+  const [loadingList, setLoadingList] = useState(false);
+  const [bindingId, setBindingId] = useState<string | null>(null);
+
+  const resolve = useCallback(async () => {
+    if (!token) {
+      setResolved(true);
+      return;
+    }
+    try {
+      const id = await getPhoneIdentity().catch(() => null);
+      if (!id?.platformDeviceId && !id?.appInstanceId) {
+        setResolved(true);
+        return;
+      }
+      const res = await axios.get(`${API_BASE_URL}/device/current`, {
+        params: {
+          platformDeviceId: id?.platformDeviceId || undefined,
+          appInstanceId: id?.appInstanceId || undefined,
+        },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCurrent(res.data?.device ?? null);
+    } catch {
+      // offline / server hiccup — banner simply stays hidden
+    } finally {
+      setResolved(true);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    resolve();
+  }, [resolve]);
+
+  const openLinkSheet = useCallback(async () => {
+    if (!token) return;
+    setLinkOpen(true);
+    setLoadingList(true);
+    try {
+      const res = await axios.get(`${API_BASE_URL}/device`, {
+        params: { status: "all" },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDevices(res.data?.devices ?? []);
+    } catch {
+      setDevices([]);
+    } finally {
+      setLoadingList(false);
+    }
+  }, [token]);
+
+  const handleBind = useCallback(
+    async (deviceId: string) => {
+      if (!token || bindingId) return;
+      setBindingId(deviceId);
+      try {
+        const id = await getPhoneIdentity().catch(() => null);
+        const res = await axios.post(
+          `${API_BASE_URL}/device/${deviceId}/bind`,
+          {
+            platformDeviceId: id?.platformDeviceId,
+            platform: id?.platform,
+            appInstanceId: id?.appInstanceId,
+            deviceLabel: id?.deviceLabel,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        setCurrent(res.data?.device ?? null);
+        setLinkOpen(false);
+      } catch (e: any) {
+        Alert.alert("Couldn't link", e?.response?.data?.message || "Please try again.");
+      } finally {
+        setBindingId(null);
+      }
+    },
+    [token, bindingId],
+  );
+
+  if (!resolved) return null;
+
+  if (current) {
+    return (
+      <View style={s.thisDevice}>
+        <Text style={s.thisDeviceDot}>📱</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={s.thisDeviceTitle}>This device</Text>
+          <Text style={s.thisDeviceSub}>
+            {current.brand} {current.model}
+            {current.imeiTail ? ` · IMEI ····${current.imeiTail}` : ""}
+          </Text>
+        </View>
+        <View style={s.thisDevicePill}>
+          <Text style={s.thisDevicePillText}>✓</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Phone not recognized but the account owns devices → offer one-tap link
+  if (deviceCount > 0) {
+    return (
+      <>
+        <Pressable style={s.linkBanner} onPress={openLinkSheet}>
+          <Text style={s.linkBannerDot}>🔗</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.linkBannerTitle}>Is this one of your devices?</Text>
+            <Text style={s.linkBannerSub}>Tap to link this phone — takes seconds</Text>
+          </View>
+          <Text style={s.linkBannerArrow}>›</Text>
+        </Pressable>
+
+        <Modal visible={linkOpen} animationType="slide" transparent onRequestClose={() => setLinkOpen(false)} statusBarTranslucent>
+          <View style={s.sheetOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setLinkOpen(false)} />
+            <View style={s.sheet}>
+              <View style={s.sheetHandle} />
+              <Text style={s.sheetTitle}>Which device is this?</Text>
+              <Text style={s.sheetSub}>Pick it from your registered devices to link this phone</Text>
+              {loadingList ? (
+                <ActivityIndicator size="small" color="#1A56FF" style={{ marginVertical: 20 }} />
+              ) : (
+                <FlatList
+                  data={devices}
+                  keyExtractor={(item) => String(item._id)}
+                  showsVerticalScrollIndicator={false}
+                  renderItem={({ item }) => (
+                    <Pressable style={s.deviceRow} onPress={() => handleBind(String(item._id))} disabled={!!bindingId}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.deviceRowName}>
+                          {item.brand} {item.model}
+                        </Text>
+                        <Text style={s.deviceRowSub}>
+                          {item.status}
+                          {item.identifiers?.imei1 ? ` · IMEI ${maskTail(item.identifiers.imei1)}` : ""}
+                        </Text>
+                      </View>
+                      {bindingId === String(item._id) ? (
+                        <ActivityIndicator size="small" color="#1A56FF" />
+                      ) : (
+                        <Text style={s.deviceRowLink}>Link ›</Text>
+                      )}
+                    </Pressable>
+                  )}
+                />
+              )}
+            </View>
+          </View>
+        </Modal>
+      </>
+    );
+  }
+
+  return null;
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -120,6 +305,8 @@ export default function HomeScreen() {
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <ThisDeviceBanner token={token} deviceCount={deviceCount} />
+
         <HeroCard count={deviceCount} />
 
         <View style={s.sectionWrap}>
@@ -212,6 +399,80 @@ const s = StyleSheet.create({
   },
   scrollContent: { padding: 20, paddingBottom: 24 },
   sectionWrap: { marginTop: 20 },
+
+  // ── This-device banner ────────────────────────────────────────────────
+  thisDevice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1.5,
+    borderColor: "#BBF7D0",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+  },
+  thisDeviceDot: { fontSize: 22 },
+  thisDeviceTitle: { fontSize: 12, fontWeight: "700", color: "#15803D" },
+  thisDeviceSub: { fontSize: 14, fontWeight: "600", color: "#0D0D0D", marginTop: 1 },
+  thisDevicePill: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#16A34A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  thisDevicePillText: { color: "white", fontWeight: "700", fontSize: 14 },
+  linkBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1.5,
+    borderColor: "#FDE68A",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+  },
+  linkBannerDot: { fontSize: 22 },
+  linkBannerTitle: { fontSize: 14, fontWeight: "700", color: "#0D0D0D" },
+  linkBannerSub: { fontSize: 12, color: "#92400E", marginTop: 1 },
+  linkBannerArrow: { fontSize: 22, color: "#D97706", fontWeight: "600" },
+
+  // ── Link sheet ────────────────────────────────────────────────────────
+  sheetOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)" },
+  sheet: {
+    backgroundColor: "white",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    maxHeight: "70%",
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#E2E8F0",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  sheetTitle: { fontSize: 18, fontWeight: "700", color: "#0D0D0D", textAlign: "center" },
+  sheetSub: { fontSize: 13, color: "#64748B", textAlign: "center", marginTop: 4, marginBottom: 12 },
+  deviceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#F1F5F9",
+  },
+  deviceRowName: { fontSize: 15, fontWeight: "600", color: "#0D0D0D" },
+  deviceRowSub: { fontSize: 12, color: "#64748B", marginTop: 2 },
+  deviceRowLink: { fontSize: 14, fontWeight: "700", color: "#1A56FF" },
   actionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
 
   heroCard: {

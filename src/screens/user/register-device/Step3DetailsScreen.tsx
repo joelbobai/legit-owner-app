@@ -1,4 +1,5 @@
 import axios from "axios";
+import * as ImageManipulator from "expo-image-manipulator";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useCallback, useState } from "react";
@@ -74,35 +75,67 @@ export default function Step3DetailsScreen() {
     setSaving(true);
 
     try {
-      const uploaded: { url: string; type: string }[] = [];
-
-      for (let i = 0; i < photos.length; i++) {
-        const uri = photos[i];
-        if (!uri) continue;
-
+      // Compress on-device first: 1600px JPEG ~300KB instead of 8-15MB HEIC/PNG.
+      // This also converts iPhone HEIC -> JPEG so sharp never sees HEIF.
+      const toUploadBase64 = async (uri: string): Promise<string> => {
+        try {
+          const done = await ImageManipulator.manipulateAsync(
+            uri,
+            [{ resize: { width: 1600 } }],
+            {
+              compress: 0.7,
+              format: ImageManipulator.SaveFormat.JPEG,
+              base64: true,
+            },
+          );
+          if (done.base64) return done.base64;
+        } catch {
+          // fall through to raw read
+        }
         const resp = await fetch(uri);
         const blob = await resp.blob();
         const reader = new FileReader();
-        const base64 = await new Promise<string>((resolve) => {
+        return await new Promise<string>((resolve, reject) => {
+          reader.onerror = () => reject(new Error("read failed"));
           reader.onload = () =>
             resolve((reader.result as string).split(",")[1]);
           reader.readAsDataURL(blob);
         });
+      };
 
-        const uploadRes = await axios.post(
-          `${API_BASE_URL}/device/upload-photo`,
-          {
-            imageData: base64,
-            mimeType: blob.type,
-            photoType: PHOTO_LABELS[i].toLowerCase(),
-          },
-          { headers: { Authorization: `Bearer ${token}` } },
+      const jobs = photos
+        .map((uri, i) => ({ uri, i }))
+        .filter((j) => !!j.uri) as { uri: string; i: number }[];
+
+      // 3-at-a-time parallel uploads instead of sequential (4 photos:
+      // ~2 rounds x ~2s instead of 4 x 10-23s).
+      const uploaded: { url: string; type: string }[] = [];
+      const failed: string[] = [];
+      for (let k = 0; k < jobs.length; k += 3) {
+        const batch = jobs.slice(k, k + 3);
+        const results = await Promise.allSettled(
+          batch.map(async ({ uri, i }) => {
+            const base64 = await toUploadBase64(uri);
+            const type = PHOTO_LABELS[i].toLowerCase().replace(/[^a-z0-9-]/g, "");
+            const uploadRes = await axios.post(
+              `${API_BASE_URL}/device/upload-photo`,
+              { imageData: base64, mimeType: "image/jpeg", photoType: type },
+              {
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 30000,
+              },
+            );
+            return { url: uploadRes.data.url as string, type };
+          }),
         );
-
-        uploaded.push({
-          url: uploadRes.data.url,
-          type: PHOTO_LABELS[i].toLowerCase(),
+        results.forEach((r, bi) => {
+          if (r.status === "fulfilled") uploaded.push(r.value);
+          else failed.push(PHOTO_LABELS[batch[bi].i]);
         });
+      }
+
+      if (failed.length > 0 && uploaded.length === 0) {
+        throw new Error(`Photo upload failed (${failed.join(", ")}). Please retake and try again.`);
       }
 
       await axios.patch(
@@ -121,11 +154,18 @@ export default function Step3DetailsScreen() {
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
+      if (failed.length > 0) {
+        Alert.alert(
+          "Some photos skipped",
+          `${failed.join(", ")} couldn't upload — continuing with ${uploaded.length} photo(s). You can re-add them later.`,
+        );
+      }
+
       router.push("/(user)/register-device/step4" as any);
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.message || "Something went wrong";
-      Alert.alert("Error", msg);
-      router.push("/(user)/register-device/step4" as any);
+      Alert.alert("Upload failed", msg);
+      return;
     } finally {
       setSaving(false);
     }

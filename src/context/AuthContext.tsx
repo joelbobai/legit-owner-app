@@ -1,6 +1,8 @@
 import { createContext, useContext, useCallback, useEffect, useState, type ReactNode } from "react";
 import * as SecureStore from "expo-secure-store";
 
+import { stopTrackingCompletely } from "@/hooks/useDeviceTracker";
+
 type User = {
   _id: string;
   fullName: string;
@@ -70,6 +72,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // A signed-out phone must never keep reporting location
+    await stopTrackingCompletely();
     await Promise.all([
       SecureStore.deleteItemAsync(STORAGE_KEYS.token),
       SecureStore.deleteItemAsync(STORAGE_KEYS.user),

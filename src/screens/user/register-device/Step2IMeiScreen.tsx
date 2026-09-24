@@ -1,9 +1,11 @@
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { LinearGradient as ExpoLinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+import * as Clipboard from "expo-clipboard";
 import axios from "axios";
 import Svg, { Circle, Defs, Path, Pattern, Rect } from "react-native-svg";
 
@@ -16,6 +18,7 @@ import OCRActionButtons from "@/components/register-device/OCRActionButtons";
 
 import { useDeviceRegistration } from "@/context/DeviceRegistrationContext";
 import { API_BASE_URL, ENDPOINTS } from "@/constants/api";
+import { getPhoneIdentity } from "@/utils/deviceIdentity";
 import { useAuth } from "@/context/AuthContext";
 
 type VerifyState = "idle" | "loading" | "valid" | "invalid" | "stolen";
@@ -96,6 +99,26 @@ type ImeiInfo = {
   imei?: string;
 };
 
+// Opens the phone dialer with *#06# pre-filled — one tap, no typing.
+// The code runs on the phone itself (no call charges, works offline).
+// Devices without a dialer (e.g. some tablets) get the code copied instead.
+const USSD_CODE = "*#06#";
+const USSD_TEL_URL = "tel:*%2306%23";
+
+function PhoneIcon({ size = 22, color = "#1A56FF" }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M5 4H9L11 9L8 11C8.9 13.5 10.5 15.1 13 16L15 13L20 15V19C20 20.1 19.1 21 18 21C10.6 21 3 13.4 3 6C3 4.9 3.9 4 5 4Z"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </Svg>
+  );
+}
+
 export default function Step2IMeiScreen() {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
@@ -116,27 +139,44 @@ export default function Step2IMeiScreen() {
   const [ocrImageUri, setOcrImageUri] = useState<string | null>(null);
   const [ocrImageMime, setOcrImageMime] = useState<string | null>(null);
 
+  const handleDialUssdCode = useCallback(async () => {
+    try {
+      const canOpen = await Linking.canOpenURL(USSD_TEL_URL);
+      if (!canOpen) throw new Error("no-dialer");
+      await Linking.openURL(USSD_TEL_URL);
+    } catch {
+      // No phone app (tablet, simulator) — copy the code so they can
+      // paste it into any phone's dialer.
+      try {
+        await Clipboard.setStringAsync(USSD_CODE);
+      } catch {
+        // clipboard unavailable — the code is visible on screen anyway
+      }
+      Alert.alert(
+        "Code copied",
+        "This device has no phone dialer. We copied *#06# — paste it into any phone's dialer to see the IMEI, then type it here.",
+      );
+    }
+  }, []);
+
   const handleOCRExtraction = useCallback(async (uri: string, mime: string) => {
     setOcrLoading(true);
     setOcrImageUri(uri);
     setOcrImageMime(mime);
     try {
-      const response = await fetch(uri);
-      const blob = await response.blob();
-
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(",")[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
+      // Normalize on-device first: gallery shots can be HEIC/PNG/huge.
+      // JPEG @1600px is what the server reads best — and this avoids the
+      // slow fetch().blob() path entirely.
+      const done = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 1600 } }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      if (!done.base64) throw new Error("convert failed");
 
       const ocrRes = await axios.post(`${API_BASE_URL}/ocr/extract-imei`, {
-        imageData: base64,
-        mimeType: blob.type,
+        imageData: done.base64,
+        mimeType: "image/jpeg",
       });
 
       const imeis: string[] = ocrRes.data.imeis;
@@ -255,24 +295,40 @@ export default function Step2IMeiScreen() {
       let imeiProofImageUrl = "";
 
       if (ocrImageUri && ocrImageMime) {
-        const resp = await fetch(ocrImageUri);
-        const blob = await resp.blob();
-        const reader = new FileReader();
-        const base64 = await new Promise<string>((resolve) => {
-          reader.onload = () => resolve((reader.result as string).split(",")[1]);
-          reader.readAsDataURL(blob);
-        });
+        let base64: string;
+        try {
+          const done = await ImageManipulator.manipulateAsync(
+            ocrImageUri,
+            [{ resize: { width: 1600 } }],
+            { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+          );
+          if (!done.base64) throw new Error("compress failed");
+          base64 = done.base64;
+        } catch {
+          const resp = await fetch(ocrImageUri);
+          const blob = await resp.blob();
+          const reader = new FileReader();
+          base64 = await new Promise<string>((resolve, reject) => {
+            reader.onerror = () => reject(new Error("read failed"));
+            reader.onload = () => resolve((reader.result as string).split(",")[1]);
+            reader.readAsDataURL(blob);
+          });
+        }
 
         const uploadRes = await axios.post(
           `${API_BASE_URL}/device/upload-imei-proof`,
-          { imageData: base64, mimeType: ocrImageMime },
-          { headers: { Authorization: `Bearer ${token}` } },
+          { imageData: base64, mimeType: "image/jpeg" },
+          { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 },
         );
         imeiProofImageUrl = uploadRes.data.url;
       }
 
       setImei(digits1);
       if (hasDualImei) setImei2(digits2);
+
+      // Bind the phone in hand to this record so the app can tell
+      // identical phones apart later ("which device is this?").
+      const identity = await getPhoneIdentity().catch(() => null);
 
       const deviceRes = await axios.post(
         `${API_BASE_URL}/device/smartphone`,
@@ -283,6 +339,10 @@ export default function Step2IMeiScreen() {
           brand: deviceInfo1?.brandName || "",
           model: deviceInfo1?.model || "",
           imeiProofImageUrl,
+          platformDeviceId: identity?.platformDeviceId || undefined,
+          platform: identity?.platform || undefined,
+          appInstanceId: identity?.appInstanceId || undefined,
+          deviceLabel: identity?.deviceLabel || undefined,
         },
         { headers: { Authorization: `Bearer ${token}` } },
       );
@@ -293,7 +353,14 @@ export default function Step2IMeiScreen() {
       });
 
       router.push("/(user)/register-device/step3" as any);
-    } catch {
+    } catch (e: any) {
+      // This physical phone is already registered — stop here so the
+      // user sees why instead of continuing with no record.
+      const msg = e?.response?.data?.message || "";
+      if (/already registered as/i.test(msg)) {
+        Alert.alert("Already registered", msg);
+        return;
+      }
       // navigation proceeds even if save fails
       setImei(digits1);
       if (hasDualImei) setImei2(digits2);
@@ -363,6 +430,20 @@ export default function Step2IMeiScreen() {
             </Pressable>
             <Tooltip visible={showTooltip} />
           </View>
+
+          {/* Tap-to-dial: opens the phone app with *#06# ready — the user
+              just hits call, reads the IMEI, and comes back to type it. */}
+          <Pressable onPress={handleDialUssdCode} style={s.dialCard}>
+            <View style={s.dialIconWrap}>
+              <PhoneIcon />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.dialCode}>*#06#</Text>
+              <Text style={s.dialHint}>
+                Tap to open your dialer — your IMEI pops up, then come back and type it below
+              </Text>
+            </View>
+          </Pressable>
         </View>
 
         <View style={s.inputSection}>
@@ -512,6 +593,38 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
+  },
+  dialCard: {
+    marginTop: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: "#EEF3FF",
+    borderWidth: 1.5,
+    borderColor: "#1A56FF",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  dialIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "white",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dialCode: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#1A56FF",
+    letterSpacing: 3,
+  },
+  dialHint: {
+    fontSize: 13,
+    color: "#4A4A4A",
+    lineHeight: 18,
+    marginTop: 2,
   },
 
   inputSection: { paddingHorizontal: 20, paddingTop: 20 },

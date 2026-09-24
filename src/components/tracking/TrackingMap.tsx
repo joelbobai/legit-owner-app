@@ -218,7 +218,7 @@ function TrackingMap({ devices, selectedDeviceId, liveLocation, isLive, accuracy
 
 const s = StyleSheet.create({
   container: { flex: 1, borderRadius: 20, overflow: "hidden" },
-  map: { ...StyleSheet.absoluteFillObject },
+  map: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
   liveBubble: {
     position: "absolute", top: 14, left: "50%",
     transform: [{ translateX: -65 }],
